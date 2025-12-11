@@ -1,6 +1,6 @@
 blueprint:
   name: S24 Ultra — Wireless Charging Fade & Off
-  description: 
+  description: s24wirless charger
     
   domain: automation
   input:
