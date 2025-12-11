@@ -1,7 +1,7 @@
 blueprint:
   name: S24 Ultra — Wireless Charging Fade & Off
-  description: >
-    When S24 Ultra starts charging wirelessly → fade selected lights to 3% → wait 20 min → turn off.
+  description: 
+    
   domain: automation
   input:
     battery_state:
