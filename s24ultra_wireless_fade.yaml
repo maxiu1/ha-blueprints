@@ -47,7 +47,7 @@ action:
     target: !input lights
     data:
       brightness_pct: 3
-      transition: 5
+      transition: 3
 
   - delay: "00:20:00"
 
