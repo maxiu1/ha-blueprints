@@ -1,33 +1,74 @@
 blueprint:
-  name: Wireless Charging Fade with Cancel
+  name: Wireless Charging Fade with Cancel + Fade Out
   description: >
     Fade selected lights when phone starts wireless charging. 
-    Cancel fade and stop the automation if phone is removed.
+    Cancel fade if phone is removed. Turns lights off with a user-defined fade-out.
   domain: automation
 
   input:
     battery_state:
       name: Battery State Sensor
-      description: Select your phone battery state entity (shows "charging")
+      description: Select your phone battery state entity (shows 'charging')
       selector:
         entity:
           domain: sensor
 
     charger_type:
       name: Charger Type Sensor
-      description: Must report "wireless" when on wireless charger
+      description: Select your phone charger type sensor (must show 'wireless')
       selector:
         entity:
           domain: sensor
 
     lights:
       name: Lights to Control
-      description: Select lights to fade and turn off
+      description: Choose lights for fade and turn-off
       selector:
         target:
           entity:
             domain: light
 
+    fade_in_seconds:
+      name: Fade-in time (seconds)
+      description: How long to fade down to target brightness
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 1
+          mode: slider
+      default: 10
+
+    brightness_target:
+      name: Target brightness (%)
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          mode: slider
+      default: 3
+
+    wait_minutes:
+      name: Wait before turning off (minutes)
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 1
+          mode: slider
+      default: 20
+
+    fade_out_seconds:
+      name: Fade-out time (seconds)
+      description: Smooth fade when turning lights off
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 1
+          mode: slider
+      default: 5
 
 trigger:
   - platform: state
@@ -35,28 +76,26 @@ trigger:
     to: "charging"
 
 condition:
-  # Wireless only
   - condition: state
     entity_id: !input charger_type
     state: "wireless"
 
 action:
-
-  # Start fade (jump to full brightness so fade is smooth)
+  # Step 1 — clean fade start
   - service: light.turn_on
     target: !input lights
     data:
       brightness_pct: 100
       transition: 1
 
-  # Fade to 3% over 10s
+  # Step 2 — fade to target brightness
   - service: light.turn_on
     target: !input lights
     data:
-      brightness_pct: 3
-      transition: 10
+      brightness_pct: !input brightness_target
+      transition: !input fade_in_seconds
 
-  # Wait but STOP immediately if charger disconnects
+  # Step 3 — wait, but cancel if unplugged
   - wait_for_trigger:
       - platform: state
         entity_id: !input battery_state
@@ -64,10 +103,11 @@ action:
       - platform: state
         entity_id: !input charger_type
         from: "wireless"
-    timeout: "00:20:00"
+    timeout:
+      minutes: !input wait_minutes
     continue_on_timeout: true
 
-  # If phone UNPLUGGED → cancel
+  # Step 4 — if unplugged → stop
   - choose:
       - conditions:
           - condition: or
@@ -85,8 +125,10 @@ action:
         sequence:
           - stop: "Phone removed from wireless charger → stopping automation."
 
-  # If phone is STILL charging → turn off lights
+  # Step 5 — fade out + turn off
   - service: light.turn_off
     target: !input lights
+    data:
+      transition: !input fade_out_seconds
 
 mode: restart
