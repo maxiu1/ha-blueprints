@@ -1,0 +1,57 @@
+blueprint:
+  name: S24 Ultra — Wireless Charging Fade & Off
+  description: >
+    When S24 Ultra starts charging wirelessly → fade selected lights to 3% → wait 20 min → turn off.
+  domain: automation
+  input:
+    battery_state:
+      name: Battery state sensor
+      description: Select your S24 Ultra battery state entity (should show "charging")
+      selector:
+        entity:
+          domain: sensor
+
+    charger_type:
+      name: Charger type sensor
+      description: Select your S24 Ultra charger type entity (must show "wireless")
+      selector:
+        entity:
+          domain: sensor
+
+    lights:
+      name: Lights to control
+      description: Lights that will fade and turn off
+      selector:
+        target:
+          entity:
+            domain: light
+
+trigger:
+  - platform: state
+    entity_id: !input battery_state
+    to: "charging"
+
+condition:
+  - condition: state
+    entity_id: !input charger_type
+    state: "wireless"
+
+action:
+  - service: light.turn_on
+    target: !input lights
+    data:
+      brightness_pct: 100
+      transition: 1
+
+  - service: light.turn_on
+    target: !input lights
+    data:
+      brightness_pct: 3
+      transition: 10
+
+  - delay: "00:20:00"
+
+  - service: light.turn_off
+    target: !input lights
+
+mode: restart
