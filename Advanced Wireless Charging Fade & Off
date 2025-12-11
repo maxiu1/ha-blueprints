@@ -1,0 +1,154 @@
+blueprint:
+  name: S24 Ultra — Advanced Wireless Charging Fade & Off
+  description: >
+    Fully configurable automation:
+    - Select which triggers activate it
+    - Adjustable fade speed
+    - Adjustable brightness target
+    - Adjustable wait time before turning off
+    - Trigger only under chosen conditions
+  domain: automation
+
+  input:
+
+    phone_battery_state:
+      name: Battery state sensor
+      description: Select the S24 Ultra battery_state entity
+      selector:
+        entity:
+          domain: sensor
+
+    phone_charger_type:
+      name: Charger type sensor
+      description: Select the S24 Ultra charger_type entity (should show "wireless")
+      selector:
+        entity:
+          domain: sensor
+
+    lights:
+      name: Lights to control
+      selector:
+        target:
+          entity:
+            domain: light
+
+    # ------- TRIGGER SELECTORS -------
+    enable_trigger_battery:
+      name: Trigger on battery state "charging"
+      selector:
+        boolean: {}
+
+    enable_trigger_wireless:
+      name: Trigger on charger_type "wireless"
+      selector:
+        boolean: {}
+
+    # ------- OPTIONS -------
+    brightness_target:
+      name: Brightness target (%)
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          mode: slider
+      default: 3
+
+    fade_speed:
+      name: Fade duration (seconds)
+      selector:
+        number:
+          min: 1
+          max: 30
+          step: 1
+          mode: slider
+      default: 10
+
+    wait_minutes:
+      name: Wait time before turning lights off (minutes)
+      selector:
+        number:
+          min: 1
+          max: 120
+          step: 1
+          mode: slider
+      default: 20
+
+    # ------- CONDITIONS -------
+    require_dark:
+      name: Only trigger when sun is below horizon?
+      selector:
+        boolean: {}
+      default: false
+
+    require_lights_on:
+      name: Only trigger if lights are already on?
+      selector:
+        boolean: {}
+      default: false
+
+# ----------- TRIGGER SECTION -----------
+trigger:
+
+  # Battery state trigger
+  - platform: state
+    entity_id: !input phone_battery_state
+    to: "charging"
+    enabled: !input enable_trigger_battery
+
+  # Wireless charging trigger
+  - platform: state
+    entity_id: !input phone_charger_type
+    to: "wireless"
+    enabled: !input enable_trigger_wireless
+
+# ----------- CONDITIONS -----------
+condition:
+
+  # Require wireless charging if that trigger is enabled
+  - condition: template
+    value_template: >
+      {{ (not (inputs.enable_trigger_wireless)) 
+         or states(inputs.phone_charger_type) == 'wireless' }}
+
+  # Only at night
+  - condition: template
+    value_template: >
+      {{ (not (inputs.require_dark)) 
+         or is_state('sun.sun', 'below_horizon') }}
+
+  # Lights must already be ON
+  - condition: template
+    value_template: >
+      {{ (not (inputs.require_lights_on)) 
+         or expand(inputs.lights.entity_id)
+              | selectattr('state', 'equalto', 'on')
+              | list
+              | count > 0 }}
+
+# ----------- ACTIONS -----------
+action:
+
+  # Ensure clean fade start
+  - service: light.turn_on
+    target: !input lights
+    data:
+      brightness_pct: 100
+      transition: 1
+
+  # Fade down to selected brightness
+  - service: light.turn_on
+    target: !input lights
+    data:
+      brightness_pct: !input brightness_target
+      transition: !input fade_speed
+
+  # Wait user-defined time
+  - delay:
+      minutes: !input wait_minutes
+
+  # Turn off lights
+  - service: light.turn_off
+    target: !input lights
+
+mode: restart
