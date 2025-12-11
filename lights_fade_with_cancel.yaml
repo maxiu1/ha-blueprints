@@ -1,0 +1,92 @@
+blueprint:
+  name: Wireless Charging Fade with Cancel
+  description: >
+    Fade selected lights when phone starts wireless charging. 
+    Cancel fade and stop the automation if phone is removed.
+  domain: automation
+
+  input:
+    battery_state:
+      name: Battery State Sensor
+      description: Select your phone battery state entity (shows "charging")
+      selector:
+        entity:
+          domain: sensor
+
+    charger_type:
+      name: Charger Type Sensor
+      description: Must report "wireless" when on wireless charger
+      selector:
+        entity:
+          domain: sensor
+
+    lights:
+      name: Lights to Control
+      description: Select lights to fade and turn off
+      selector:
+        target:
+          entity:
+            domain: light
+
+
+trigger:
+  - platform: state
+    entity_id: !input battery_state
+    to: "charging"
+
+condition:
+  # Wireless only
+  - condition: state
+    entity_id: !input charger_type
+    state: "wireless"
+
+action:
+
+  # Start fade (jump to full brightness so fade is smooth)
+  - service: light.turn_on
+    target: !input lights
+    data:
+      brightness_pct: 100
+      transition: 1
+
+  # Fade to 3% over 10s
+  - service: light.turn_on
+    target: !input lights
+    data:
+      brightness_pct: 3
+      transition: 10
+
+  # Wait but STOP immediately if charger disconnects
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input battery_state
+        from: "charging"
+      - platform: state
+        entity_id: !input charger_type
+        from: "wireless"
+    timeout: "00:20:00"
+    continue_on_timeout: true
+
+  # If phone UNPLUGGED → cancel
+  - choose:
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: not
+                conditions:
+                  - condition: state
+                    entity_id: !input battery_state
+                    state: "charging"
+              - condition: not
+                conditions:
+                  - condition: state
+                    entity_id: !input charger_type
+                    state: "wireless"
+        sequence:
+          - stop: "Phone removed from wireless charger → stopping automation."
+
+  # If phone is STILL charging → turn off lights
+  - service: light.turn_off
+    target: !input lights
+
+mode: restart
