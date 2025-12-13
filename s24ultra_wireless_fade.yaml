@@ -46,7 +46,7 @@ action:
   - service: light.turn_on
     target: !input lights
     data:
-      brightness_pct: 3
+      brightness_pct: 1
       transition: 3
 
   - delay: "00:20:00"
