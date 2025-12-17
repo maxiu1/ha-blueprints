@@ -13,7 +13,9 @@ blueprint:
         entity:
           domain: binary_sensor
     charging_sensor_2:
-      name: Phone 2 charging sensor
+      name: Phone 2 charging
+   input:
+ sensor
       selector:
         entity:
           domain: binary_sensor
