@@ -1,9 +1,9 @@
 blueprint:
   name: Sensor Light + Phone (FULL BALLISTIC v3)
   description: >
-    Advanced smart light automation with motion, illuminance, sun,
-    Samsung Galaxy S24 Ultra phone sensors, cancel logic, cooldown
-    and weekday/weekend control.
+    Advanced smart light automation using motion, illuminance or sun,
+    with Samsung Galaxy S24 Ultra phone conditions, cancel logic,
+    cooldown, weekday/weekend and night control.
   domain: automation
 
   input:
@@ -20,130 +20,125 @@ blueprint:
           entity:
             domain: light
 
+    no_motion_wait:
+      name: Wait after no motion (seconds)
+      default: 120
+      selector:
+        number:
+          min: 1
+          max: 3600
+          unit_of_measurement: seconds
 
-  no_motion_wait:
-    name: Wait after no motion (seconds)
-    default: 120
-    selector:
-      number:
-        min: 1
-        max: 3600
-        unit_of_measurement: seconds
+    illuminance_sensor:
+      name: (Optional) Illuminance Sensor
+      default: []
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
 
-  illuminance_sensor:
-    name: (Optional) Illuminance Sensor
-    default: []
-    selector:
-      entity:
-        domain: sensor
-        device_class: illuminance
+    illuminance_threshold:
+      name: Illuminance Threshold
+      default: 20
+      selector:
+        number:
+          min: 0
+          max: 2000
 
-  illuminance_threshold:
-    name: Illuminance Threshold
-    default: 20
-    selector:
-      number:
-        min: 0
-        max: 2000
+    sun_elevation:
+      name: (Optional) Sun elevation max
+      default: 5
+      selector:
+        number:
+          min: -10
+          max: 90
 
-  sun_elevation:
-    name: (Optional) Sun Elevation Max
-    default: 5
-    selector:
-      number:
-        min: -10
-        max: 90
+    use_phone:
+      name: Enable phone conditions
+      default: false
+      selector:
+        boolean: {}
 
-  # ───────── PHONE OPTIONS ─────────
+    require_charging:
+      name: Require phone charging
+      default: false
+      selector:
+        boolean: {}
 
-  use_phone:
-    name: Enable phone conditions
-    default: false
-    selector:
-      boolean: {}
+    require_wireless:
+      name: Require wireless charging
+      default: false
+      selector:
+        boolean: {}
 
-  require_charging:
-    name: Require phone charging
-    default: false
-    selector:
-      boolean: {}
+    require_screen_on:
+      name: Require phone screen ON
+      default: false
+      selector:
+        boolean: {}
 
-  require_wireless:
-    name: Require wireless charging
-    default: false
-    selector:
-      boolean: {}
+    require_home:
+      name: Require phone at HOME
+      default: false
+      selector:
+        boolean: {}
 
-  require_screen_on:
-    name: Require screen ON
-    default: false
-    selector:
-      boolean: {}
+    battery_below:
+      name: Battery below %
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
 
-  require_home:
-    name: Require phone at HOME
-    default: false
-    selector:
-      boolean: {}
+    cancel_on_unplug:
+      name: Turn lights OFF when phone unplugged
+      default: false
+      selector:
+        boolean: {}
 
-  battery_below:
-    name: Battery below %
-    default: 100
-    selector:
-      number:
-        min: 1
-        max: 100
-        unit_of_measurement: "%"
+    cancel_on_screen_off:
+      name: Turn lights OFF when screen turns OFF
+      default: false
+      selector:
+        boolean: {}
 
-  cancel_on_unplug:
-    name: Turn lights OFF when phone unplugged
-    default: false
-    selector:
-      boolean: {}
+    cooldown:
+      name: Cooldown (seconds)
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 600
+          unit_of_measurement: seconds
 
-  cancel_on_screen_off:
-    name: Turn lights OFF when screen turns OFF
-    default: false
-    selector:
-      boolean: {}
+    allowed_days:
+      name: Allowed days
+      default: [mon, tue, wed, thu, fri, sat, sun]
+      selector:
+        select:
+          multiple: true
+          options:
+            - mon
+            - tue
+            - wed
+            - thu
+            - fri
+            - sat
+            - sun
 
-  # ───────── TIME / LOGIC ─────────
+    night_start:
+      name: Night mode start
+      default: "22:00:00"
+      selector:
+        time: {}
 
-  cooldown:
-    name: Cooldown (seconds)
-    default: 30
-    selector:
-      number:
-        min: 0
-        max: 600
-        unit_of_measurement: seconds
-
-  allowed_days:
-    name: Allowed days
-    default: [mon, tue, wed, thu, fri, sat, sun]
-    selector:
-      select:
-        multiple: true
-        options:
-          - mon
-          - tue
-          - wed
-          - thu
-          - fri
-          - sat
-          - sun
-
-  night_start:
-    name: Night mode start
-    default: "22:00:00"
-    selector:
-      time: {}
-
-  night_end:
-    name: Night mode end
-    default: "06:00:00"
-    selector:
-      time: {}
+    night_end:
+      name: Night mode end
+      default: "06:00:00"
+      selector:
+        time: {}
 
 trigger:
   - platform: state
@@ -157,7 +152,6 @@ trigger:
     for:
       seconds: !input no_motion_wait
 
-  # Cancel triggers
   - platform: state
     entity_id: binary_sensor.s24ultra_is_charging
     to: "off"
@@ -182,7 +176,7 @@ action:
 
   - choose:
 
-      # ───── CANCEL LOGIC ─────
+      # ───── CANCEL: UNPLUG ─────
       - conditions:
           - condition: template
             value_template: >
@@ -191,6 +185,7 @@ action:
           - service: light.turn_off
             target: !input light_target
 
+      # ───── CANCEL: SCREEN OFF ─────
       - conditions:
           - condition: template
             value_template: >
@@ -222,16 +217,16 @@ action:
               {% else %}
                 {% set ok = true %}
                 {% if require_charging %}
-                  {% set ok = ok and is_state('binary_sensor.s24ultra_is_charging','on') %}
+                  {% set ok = ok and is_state('binary_sensor.s24ultra_is_charging', 'on') %}
                 {% endif %}
                 {% if require_wireless %}
-                  {% set ok = ok and is_state('sensor.s24ultra_charger_type','wireless') %}
+                  {% set ok = ok and is_state('sensor.s24ultra_charger_type', 'wireless') %}
                 {% endif %}
                 {% if require_screen_on %}
-                  {% set ok = ok and is_state('binary_sensor.s24ultra_interactive','on') %}
+                  {% set ok = ok and is_state('binary_sensor.s24ultra_interactive', 'on') %}
                 {% endif %}
                 {% if require_home %}
-                  {% set ok = ok and is_state('device_tracker.s24ultra','home') %}
+                  {% set ok = ok and is_state('device_tracker.s24ultra', 'home') %}
                 {% endif %}
                 {% set ok = ok and states('sensor.s24ultra_battery_level')|int < battery_below %}
                 {{ ok }}
