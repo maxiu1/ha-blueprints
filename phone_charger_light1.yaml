@@ -1,10 +1,10 @@
 blueprint:
-  name: Phone Charging Lights (Timer-based, FIXED)
+  name: Phone Charging Lights (Timer-based, FIXED v2)
   description: >
     Starts a timer when phone charging begins.
     When timer finishes: dim lights then turn OFF.
     At a defined time, lights turn ON with gradual color shift.
-    Optional second charging device supported.
+    Optional second charging device supported safely.
   domain: automation
 
   input:
@@ -104,28 +104,17 @@ blueprint:
           unit_of_measurement: seconds
 
 trigger:
-  # Charging started (primary device)
   - platform: state
     entity_id: !input phone_charging_1
     to: "on"
     id: charging_started
 
-  # Charging stopped (either device)
-  - platform: state
-    entity_id:
-      - !input phone_charging_1
-      - !input phone_charging_2
-    to: "off"
-    id: charging_stopped
-
-  # OFF timer finished
   - platform: event
     event_type: timer.finished
     event_data:
       entity_id: timer.phone_charging_lights_off
     id: off_timer_done
 
-  # Scheduled ON
   - platform: time
     at: !input on_time
     id: scheduled_on
@@ -133,7 +122,7 @@ trigger:
 action:
   - choose:
 
-      # ───────── START OFF TIMER ─────────
+      # ───────── START TIMER ─────────
       - conditions:
           - condition: trigger
             id: charging_started
@@ -145,24 +134,20 @@ action:
               duration:
                 minutes: !input off_timer_minutes
 
-      # ───────── CANCEL TIMER IF ALL UNPLUGGED ─────────
-      - conditions:
-          - condition: trigger
-            id: charging_stopped
-          - condition: template
-            value_template: >
-              {{ not is_state(phone_charging_1,'on')
-                 and not (use_second_device and phone_charging_2 != [] and is_state(phone_charging_2,'on')) }}
-        sequence:
-          - service: timer.cancel
-            target:
-              entity_id: timer.phone_charging_lights_off
-
       # ───────── TIMER DONE → DIM → OFF ─────────
       - conditions:
           - condition: trigger
             id: off_timer_done
         sequence:
+          # wait until ALL devices are not charging OR timeout
+          - wait_template: >
+              {{ not is_state(phone_charging_1, 'on')
+                 and not (use_second_device
+                          and phone_charging_2 != []
+                          and is_state(phone_charging_2, 'on')) }}
+            timeout: "00:00:10"
+            continue_on_timeout: true
+
           - service: light.turn_on
             target: !input off_lights
             data:
@@ -175,7 +160,7 @@ action:
           - service: light.turn_off
             target: !input off_lights
 
-      # ───────── SCHEDULED ON (ALWAYS) ─────────
+      # ───────── SCHEDULED ON ─────────
       - conditions:
           - condition: trigger
             id: scheduled_on
