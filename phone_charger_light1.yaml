@@ -1,15 +1,15 @@
 blueprint:
-  name: Phone Charging Lights (Full Fixed)
+  name: Phone Charging Lights (Timer-based, FIXED)
   description: >
-    When phone starts charging, lights dim and turn OFF after delay.
+    Starts a timer when phone charging begins.
+    When timer finishes: dim lights then turn OFF.
     At a defined time, lights turn ON with gradual color shift.
-    Supports optional second charging device without forcing selection.
+    Optional second charging device supported.
   domain: automation
 
   input:
     phone_charging_1:
       name: Phone charging sensor #1
-      description: Required. Companion App binary_sensor.is_charging
       selector:
         entity:
           domain: binary_sensor
@@ -27,15 +27,8 @@ blueprint:
         entity:
           domain: binary_sensor
 
-    off_lights:
-      name: Lights to dim & turn OFF
-      selector:
-        target:
-          entity:
-            domain: light
-
-    off_delay_minutes:
-      name: Delay before dim (minutes)
+    off_timer_minutes:
+      name: Turn OFF after charging (minutes)
       default: 10
       selector:
         number:
@@ -43,8 +36,15 @@ blueprint:
           max: 240
           unit_of_measurement: min
 
+    off_lights:
+      name: Lights to dim & turn OFF
+      selector:
+        target:
+          entity:
+            domain: light
+
     dim_pct:
-      name: Dim brightness (%)
+      name: Dim brightness before OFF (%)
       default: 10
       selector:
         number:
@@ -104,13 +104,28 @@ blueprint:
           unit_of_measurement: seconds
 
 trigger:
-  # Charging started (primary device only)
+  # Charging started (primary device)
   - platform: state
     entity_id: !input phone_charging_1
     to: "on"
     id: charging_started
 
-  # Scheduled ON (always)
+  # Charging stopped (either device)
+  - platform: state
+    entity_id:
+      - !input phone_charging_1
+      - !input phone_charging_2
+    to: "off"
+    id: charging_stopped
+
+  # OFF timer finished
+  - platform: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.phone_charging_lights_off
+    id: off_timer_done
+
+  # Scheduled ON
   - platform: time
     at: !input on_time
     id: scheduled_on
@@ -118,29 +133,36 @@ trigger:
 action:
   - choose:
 
-      # ───────── DELAY → DIM → OFF ─────────
+      # ───────── START OFF TIMER ─────────
       - conditions:
           - condition: trigger
             id: charging_started
         sequence:
-          - wait_for_trigger:
-              - platform: state
-                entity_id: !input phone_charging_1
-                to: "off"
-              - platform: state
-                entity_id: !input phone_charging_2
-                to: "off"
-            timeout:
-              minutes: !input off_delay_minutes
-            continue_on_timeout: true
+          - service: timer.start
+            target:
+              entity_id: timer.phone_charging_lights_off
+            data:
+              duration:
+                minutes: !input off_timer_minutes
 
+      # ───────── CANCEL TIMER IF ALL UNPLUGGED ─────────
+      - conditions:
+          - condition: trigger
+            id: charging_stopped
           - condition: template
             value_template: >
-              {{ is_state(phone_charging_1,'on')
-                 or (use_second_device
-                     and phone_charging_2 != []
-                     and is_state(phone_charging_2,'on')) }}
+              {{ not is_state(phone_charging_1,'on')
+                 and not (use_second_device and phone_charging_2 != [] and is_state(phone_charging_2,'on')) }}
+        sequence:
+          - service: timer.cancel
+            target:
+              entity_id: timer.phone_charging_lights_off
 
+      # ───────── TIMER DONE → DIM → OFF ─────────
+      - conditions:
+          - condition: trigger
+            id: off_timer_done
+        sequence:
           - service: light.turn_on
             target: !input off_lights
             data:
@@ -153,7 +175,7 @@ action:
           - service: light.turn_off
             target: !input off_lights
 
-      # ───────── SCHEDULED ON (INDEPENDENT OF CHARGING) ─────────
+      # ───────── SCHEDULED ON (ALWAYS) ─────────
       - conditions:
           - condition: trigger
             id: scheduled_on
