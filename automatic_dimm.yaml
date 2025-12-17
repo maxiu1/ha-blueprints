@@ -1,8 +1,9 @@
 blueprint:
-  name: Phone Charging Lights (Immediate Dim – FINAL FIXED)
+  name: Phone Charging Lights (Immediate Dim – STABLE)
   description: >
-    Lights dim immediately when phone is charging,
-    then turn OFF after a timer. Scheduled ON with color shift supported.
+    Dim lights immediately when phone starts charging,
+    then turn them OFF after a timer.
+    Scheduled ON with color shift supported.
   domain: automation
 
   input:
@@ -94,10 +95,6 @@ trigger:
     to: "on"
     id: charging_started
 
-  - platform: homeassistant
-    event: start
-    id: ha_start
-
   - platform: event
     event_type: timer.finished
     event_data:
@@ -113,10 +110,11 @@ action:
 
       # ───────── IMMEDIATE DIM + START TIMER ─────────
       - conditions:
-          - condition: template
-            value_template: >
-              {{ trigger.id in ['charging_started','ha_start']
-                 and is_state('!input phone_charging_1','on') }}
+          - condition: trigger
+            id: charging_started
+          - condition: state
+            entity_id: !input phone_charging_1
+            state: "on"
         sequence:
           - service: light.turn_on
             target: !input off_lights
