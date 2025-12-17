@@ -1,0 +1,180 @@
+blueprint:
+  name: Phone Charging Lights (Optional 2nd Device + Color Shift)
+  description: >
+    When phone starts charging, lights dim and turn OFF after delay.
+    At a defined time, lights turn ON with gradual color shift.
+    Supports optional second charging device.
+  domain: automation
+
+  input:
+    phone_charging_1:
+      name: Phone charging sensor #1
+      selector:
+        entity:
+          domain: binary_sensor
+
+    use_second_device:
+      name: Enable second charging device
+      default: false
+      selector:
+        boolean: {}
+
+    phone_charging_2:
+      name: Phone charging sensor #2
+      default: []
+      selector:
+        entity:
+          domain: binary_sensor
+
+    off_lights:
+      name: Lights to dim & turn OFF
+      selector:
+        target:
+          entity:
+            domain: light
+
+    off_delay_minutes:
+      name: Delay before dim (minutes)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 240
+          unit_of_measurement: min
+
+    dim_pct:
+      name: Dim brightness (%)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    dim_duration:
+      name: Dim transition time (seconds)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 300
+          unit_of_measurement: seconds
+
+    on_time:
+      name: Time to turn ON lights
+      selector:
+        time: {}
+
+    on_lights:
+      name: Lights to turn ON
+      selector:
+        target:
+          entity:
+            domain: light
+
+    start_color:
+      name: Start color
+      default: [255, 120, 0]
+      selector:
+        color_rgb: {}
+
+    end_color:
+      name: End color
+      default: [255, 200, 150]
+      selector:
+        color_rgb: {}
+
+    on_brightness_pct:
+      name: ON brightness (%)
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    color_shift_seconds:
+      name: Color shift duration (seconds)
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 600
+          unit_of_measurement: seconds
+
+trigger:
+  # Charging started (OR logic)
+  - platform: state
+    entity_id: !input phone_charging_1
+    to: "on"
+    id: charging_1
+
+  - platform: state
+    entity_id: !input phone_charging_2
+    to: "on"
+    id: charging_2
+
+  # Scheduled ON
+  - platform: time
+    at: !input on_time
+    id: scheduled_on
+
+action:
+  - choose:
+
+      # ───────── DELAY → DIM → OFF ─────────
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.id in ['charging_1','charging_2']
+                 and (trigger.id != 'charging_2' or use_second_device) }}
+        sequence:
+          - wait_for_trigger:
+              - platform: state
+                entity_id:
+                  - !input phone_charging_1
+                  - !input phone_charging_2
+                to: "off"
+            timeout:
+              minutes: !input off_delay_minutes
+            continue_on_timeout: true
+
+          - condition: template
+            value_template: >
+              {{ is_state(phone_charging_1,'on')
+                 or (use_second_device and is_state(phone_charging_2,'on')) }}
+
+          - service: light.turn_on
+            target: !input off_lights
+            data:
+              brightness_pct: !input dim_pct
+              transition: !input dim_duration
+
+          - delay:
+              seconds: !input dim_duration
+
+          - service: light.turn_off
+            target: !input off_lights
+
+      # ───────── SCHEDULED ON (ALWAYS) ─────────
+      - conditions:
+          - condition: trigger
+            id: scheduled_on
+        sequence:
+          - service: light.turn_on
+            target: !input on_lights
+            data:
+              brightness_pct: !input on_brightness_pct
+              rgb_color: !input start_color
+              transition: 0
+
+          - delay:
+              seconds: 1
+
+          - service: light.turn_on
+            target: !input on_lights
+            data:
+              rgb_color: !input end_color
+              transition: !input color_shift_seconds
+
+mode: restart
