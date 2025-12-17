@@ -1,28 +1,13 @@
 blueprint:
-  name: Phone Charging Lights (Immediate Dim + Timer OFF, FINAL)
+  name: Phone Charging Lights (Immediate Dim – FINAL)
   description: >
-    When phone charging starts, lights dim immediately and an OFF timer starts.
-    When timer finishes, lights turn OFF.
-    At a defined time, lights turn ON with gradual color shift.
-    Optional second charging device supported safely.
+    Lights dim immediately when phone is charging (even if already charging),
+    then turn OFF after a timer. Scheduled ON with color shift supported.
   domain: automation
 
   input:
     phone_charging_1:
-      name: Phone charging sensor #1
-      selector:
-        entity:
-          domain: binary_sensor
-
-    use_second_device:
-      name: Enable second charging device
-      default: false
-      selector:
-        boolean: {}
-
-    phone_charging_2:
-      name: Phone charging sensor #2 (optional)
-      default: []
+      name: Phone charging sensor
       selector:
         entity:
           domain: binary_sensor
@@ -54,7 +39,7 @@ blueprint:
 
     dim_transition:
       name: Dim transition time (seconds)
-      default: 5
+      default: 3
       selector:
         number:
           min: 0
@@ -104,11 +89,16 @@ blueprint:
           unit_of_measurement: seconds
 
 trigger:
-  # Charging started (ONLY primary device)
+  # Charging just started
   - platform: state
     entity_id: !input phone_charging_1
     to: "on"
     id: charging_started
+
+  # HA restart / automation reload
+  - platform: homeassistant
+    event: start
+    id: ha_start
 
   # OFF timer finished
   - platform: event
@@ -125,10 +115,12 @@ trigger:
 action:
   - choose:
 
-      # ───────── IMMEDIATE DIM + START TIMER ─────────
+      # ───────── IMMEDIATE DIM (charging OR HA start) ─────────
       - conditions:
-          - condition: trigger
-            id: charging_started
+          - condition: template
+            value_template: >
+              {{ trigger.id in ['charging_started','ha_start']
+                 and is_state(phone_charging_1,'on') }}
         sequence:
           - service: light.turn_on
             target: !input off_lights
@@ -137,39 +129,3 @@ action:
               transition: !input dim_transition
 
           - service: timer.start
-            target:
-              entity_id: timer.phone_charging_lights_off
-            data:
-              duration:
-                minutes: !input off_timer_minutes
-
-      # ───────── TIMER DONE → OFF (ALWAYS) ─────────
-      - conditions:
-          - condition: trigger
-            id: off_timer_done
-        sequence:
-          - service: light.turn_off
-            target: !input off_lights
-
-      # ───────── SCHEDULED ON ─────────
-      - conditions:
-          - condition: trigger
-            id: scheduled_on
-        sequence:
-          - service: light.turn_on
-            target: !input on_lights
-            data:
-              brightness_pct: !input on_brightness_pct
-              rgb_color: !input start_color
-              transition: 0
-
-          - delay:
-              seconds: 1
-
-          - service: light.turn_on
-            target: !input on_lights
-            data:
-              rgb_color: !input end_color
-              transition: !input color_shift_seconds
-
-mode: restart
