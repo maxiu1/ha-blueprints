@@ -1,0 +1,167 @@
+blueprint:
+  name: Sensor Light + Phone (Galaxy S24 Ultra)
+  description: >
+    Smart light automation using motion, illuminance, sun elevation
+    and optional Samsung Galaxy S24 Ultra phone sensors.
+  domain: automation
+
+  input:
+    motion_sensor:
+      name: Motion Sensor
+      selector:
+        entity:
+          domain: binary_sensor
+
+    light_target:
+      name: Light
+      selector:
+        target:
+          entity:
+            domain: light
+
+    no_motion_wait:
+      name: Wait time after no motion (seconds)
+      default: 120
+      selector:
+        number:
+          min: 1
+          max: 3600
+          unit_of_measurement: seconds
+
+    illuminance_sensor:
+      name: (Optional) Illuminance Sensor
+      default: []
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+
+    illuminance_threshold:
+      name: Illuminance Threshold
+      default: 20
+      selector:
+        number:
+          min: 0
+          max: 1000
+
+    sun_elevation:
+      name: (Optional) Sun Elevation Max
+      default: 5
+      selector:
+        number:
+          min: -10
+          max: 90
+
+    phone_device:
+      name: (Optional) Phone Device (Galaxy S24 Ultra)
+      default: []
+      selector:
+        device:
+          integration: mobile_app
+
+    phone_require_charging:
+      name: Require phone charging
+      default: false
+      selector:
+        boolean: {}
+
+    phone_require_wireless:
+      name: Require wireless charging
+      default: false
+      selector:
+        boolean: {}
+
+    phone_battery_below:
+      name: (Optional) Battery below %
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    phone_screen_on:
+      name: Require screen ON
+      default: false
+      selector:
+        boolean: {}
+
+    phone_home_only:
+      name: Require phone at HOME
+      default: false
+      selector:
+        boolean: {}
+
+trigger:
+  - platform: state
+    entity_id: !input motion_sensor
+    to: "on"
+
+  - platform: state
+    entity_id: !input motion_sensor
+    from: "on"
+    to: "off"
+    for:
+      seconds: !input no_motion_wait
+
+condition:
+  - condition: or
+    conditions:
+      - condition: template
+        value_template: "{{ phone_device == [] }}"
+      - condition: and
+        conditions:
+          - condition: device
+            device_id: !input phone_device
+            domain: binary_sensor
+            entity_id: binary_sensor.is_charging
+            state: "on"
+            enabled: !input phone_require_charging
+
+          - condition: device
+            device_id: !input phone_device
+            domain: sensor
+            entity_id: sensor.battery_level
+            below: !input phone_battery_below
+
+          - condition: device
+            device_id: !input phone_device
+            domain: binary_sensor
+            entity_id: binary_sensor.interactive
+            state: "on"
+            enabled: !input phone_screen_on
+
+          - condition: device
+            device_id: !input phone_device
+            domain: device_tracker
+            entity_id: device_tracker.galaxy_s24_ultra
+            state: "home"
+            enabled: !input phone_home_only
+
+action:
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: !input motion_sensor
+            state: "on"
+
+          - condition: or
+            conditions:
+              - condition: numeric_state
+                entity_id: !input illuminance_sensor
+                below: !input illuminance_threshold
+
+              - condition: numeric_state
+                entity_id: sun.sun
+                attribute: elevation
+                below: !input sun_elevation
+
+        sequence:
+          - service: light.turn_on
+            target: !input light_target
+
+    default:
+      - service: light.turn_off
+        target: !input light_target
+
+mode: restart
