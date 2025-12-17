@@ -1,14 +1,15 @@
 blueprint:
-  name: Phone Charging Lights (Optional 2nd Device + Color Shift)
+  name: Phone Charging Lights (Full Fixed)
   description: >
     When phone starts charging, lights dim and turn OFF after delay.
     At a defined time, lights turn ON with gradual color shift.
-    Supports optional second charging device.
+    Supports optional second charging device without forcing selection.
   domain: automation
 
   input:
     phone_charging_1:
       name: Phone charging sensor #1
+      description: Required. Companion App binary_sensor.is_charging
       selector:
         entity:
           domain: binary_sensor
@@ -20,7 +21,7 @@ blueprint:
         boolean: {}
 
     phone_charging_2:
-      name: Phone charging sensor #2
+      name: Phone charging sensor #2 (optional)
       default: []
       selector:
         entity:
@@ -53,7 +54,7 @@ blueprint:
 
     dim_duration:
       name: Dim transition time (seconds)
-      default: 10
+      default: 15
       selector:
         number:
           min: 1
@@ -73,19 +74,19 @@ blueprint:
             domain: light
 
     start_color:
-      name: Start color
+      name: Start color (ON)
       default: [255, 120, 0]
       selector:
         color_rgb: {}
 
     end_color:
-      name: End color
+      name: End color (ON)
       default: [255, 200, 150]
       selector:
         color_rgb: {}
 
     on_brightness_pct:
-      name: ON brightness (%)
+      name: Final ON brightness (%)
       default: 30
       selector:
         number:
@@ -103,18 +104,13 @@ blueprint:
           unit_of_measurement: seconds
 
 trigger:
-  # Charging started (OR logic)
+  # Charging started (primary device only)
   - platform: state
     entity_id: !input phone_charging_1
     to: "on"
-    id: charging_1
+    id: charging_started
 
-  - platform: state
-    entity_id: !input phone_charging_2
-    to: "on"
-    id: charging_2
-
-  # Scheduled ON
+  # Scheduled ON (always)
   - platform: time
     at: !input on_time
     id: scheduled_on
@@ -124,16 +120,15 @@ action:
 
       # ───────── DELAY → DIM → OFF ─────────
       - conditions:
-          - condition: template
-            value_template: >
-              {{ trigger.id in ['charging_1','charging_2']
-                 and (trigger.id != 'charging_2' or use_second_device) }}
+          - condition: trigger
+            id: charging_started
         sequence:
           - wait_for_trigger:
               - platform: state
-                entity_id:
-                  - !input phone_charging_1
-                  - !input phone_charging_2
+                entity_id: !input phone_charging_1
+                to: "off"
+              - platform: state
+                entity_id: !input phone_charging_2
                 to: "off"
             timeout:
               minutes: !input off_delay_minutes
@@ -142,7 +137,9 @@ action:
           - condition: template
             value_template: >
               {{ is_state(phone_charging_1,'on')
-                 or (use_second_device and is_state(phone_charging_2,'on')) }}
+                 or (use_second_device
+                     and phone_charging_2 != []
+                     and is_state(phone_charging_2,'on')) }}
 
           - service: light.turn_on
             target: !input off_lights
@@ -156,7 +153,7 @@ action:
           - service: light.turn_off
             target: !input off_lights
 
-      # ───────── SCHEDULED ON (ALWAYS) ─────────
+      # ───────── SCHEDULED ON (INDEPENDENT OF CHARGING) ─────────
       - conditions:
           - condition: trigger
             id: scheduled_on
