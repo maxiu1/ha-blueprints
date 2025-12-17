@@ -1,27 +1,34 @@
 blueprint:
-  name: Phone Charging Lights (Delayed OFF + Scheduled ON)
+  name: Phone Charging Lights (OR + Dim + Scheduled ON)
   description: >
-    1) When phone starts charging (any charger), wait X minutes then turn OFF chosen lights.
-    2) At a specific time, if phone is still charging, turn ON chosen lights with chosen brightness and color.
+    When ANY selected phone starts charging, wait X minutes, dim lights,
+    then turn them OFF. At a scheduled time, if ANY phone is still charging,
+    turn lights ON with fade, brightness and color.
   domain: automation
 
   input:
-    phone_charging:
-      name: Phone charging sensor (binary_sensor)
-      description: Companion App "is_charging" binary_sensor for your S24 Ultra.
+    phone_charging_1:
+      name: Phone charging sensor #1
+      selector:
+        entity:
+          domain: binary_sensor
+
+    phone_charging_2:
+      name: Phone charging sensor #2 (optional)
+      default: []
       selector:
         entity:
           domain: binary_sensor
 
     off_lights:
-      name: Lights to turn OFF after delay
+      name: Lights to turn OFF
       selector:
         target:
           entity:
             domain: light
 
     off_delay_minutes:
-      name: Delay before turning OFF (minutes)
+      name: Delay before dim & OFF (minutes)
       default: 10
       selector:
         number:
@@ -29,41 +36,68 @@ blueprint:
           max: 240
           unit_of_measurement: min
 
-    on_time:
-      name: Time to turn ON (only if still charging)
-      selector:
-        time: {}
-
-    on_lights:
-      name: Lights to turn ON at scheduled time
-      selector:
-        target:
-          entity:
-            domain: light
-
-    on_brightness_pct:
-      name: Turn ON brightness (%)
-      default: 20
+    dim_pct:
+      name: Dim to brightness (% before OFF)
+      default: 10
       selector:
         number:
           min: 1
           max: 100
           unit_of_measurement: "%"
 
+    dim_duration:
+      name: Dim duration before OFF (seconds)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 300
+          unit_of_measurement: seconds
+
+    on_time:
+      name: Scheduled ON time
+      selector:
+        time: {}
+
+    on_lights:
+      name: Lights to turn ON
+      selector:
+        target:
+          entity:
+            domain: light
+
+    on_brightness_pct:
+      name: Final ON brightness (%)
+      default: 30
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    fade_in_seconds:
+      name: Fade-in time to full brightness (seconds)
+      default: 20
+      selector:
+        number:
+          min: 0
+          max: 300
+          unit_of_measurement: seconds
+
     use_rgb_color:
-      name: Use RGB color (otherwise uses Color Temperature)
+      name: Use RGB color (otherwise Kelvin)
       default: true
       selector:
         boolean: {}
 
     on_rgb_color:
-      name: RGB color (used if "Use RGB color" = true)
+      name: RGB color (if enabled)
       default: [255, 160, 0]
       selector:
         color_rgb: {}
 
     on_color_temp_kelvin:
-      name: Color temperature in Kelvin (used if "Use RGB color" = false)
+      name: Color temperature (Kelvin if RGB disabled)
       default: 2200
       selector:
         number:
@@ -72,48 +106,60 @@ blueprint:
           unit_of_measurement: K
 
 trigger:
-  # 1) Start charging (ANY charger)
   - platform: state
-    entity_id: !input phone_charging
+    entity_id:
+      - !input phone_charging_1
+      - !input phone_charging_2
     to: "on"
     id: charging_started
 
-  # 2) Scheduled time check
   - platform: time
     at: !input on_time
     id: scheduled_on
 
 action:
   - choose:
-      # ───────── 1) Delayed OFF after charging starts ─────────
+
+      # ───────── DELAY → DIM → OFF ─────────
       - conditions:
           - condition: trigger
             id: charging_started
         sequence:
-          # wait X minutes, but if charging stops, abort
           - wait_for_trigger:
               - platform: state
-                entity_id: !input phone_charging
+                entity_id:
+                  - !input phone_charging_1
+                  - !input phone_charging_2
                 to: "off"
             timeout:
               minutes: !input off_delay_minutes
             continue_on_timeout: true
 
-          # only turn off if still charging after timeout
-          - condition: state
-            entity_id: !input phone_charging
-            state: "on"
+          - condition: template
+            value_template: >
+              {{ is_state(phone_charging_1,'on')
+                 or (phone_charging_2 != [] and is_state(phone_charging_2,'on')) }}
+
+          - service: light.turn_on
+            target: !input off_lights
+            data:
+              brightness_pct: !input dim_pct
+              transition: !input dim_duration
+
+          - delay:
+              seconds: !input dim_duration
 
           - service: light.turn_off
             target: !input off_lights
 
-      # ───────── 2) Scheduled ON if still charging ─────────
+      # ───────── SCHEDULED ON (IF STILL CHARGING) ─────────
       - conditions:
           - condition: trigger
             id: scheduled_on
-          - condition: state
-            entity_id: !input phone_charging
-            state: "on"
+          - condition: template
+            value_template: >
+              {{ is_state(phone_charging_1,'on')
+                 or (phone_charging_2 != [] and is_state(phone_charging_2,'on')) }}
         sequence:
           - choose:
               - conditions:
@@ -125,11 +171,13 @@ action:
                     data:
                       brightness_pct: !input on_brightness_pct
                       rgb_color: !input on_rgb_color
+                      transition: !input fade_in_seconds
             default:
               - service: light.turn_on
                 target: !input on_lights
                 data:
                   brightness_pct: !input on_brightness_pct
                   kelvin: !input on_color_temp_kelvin
+                  transition: !input fade_in_seconds
 
 mode: restart
