@@ -1,10 +1,10 @@
 blueprint:
-  name: Phone Wireless Charging Lights (Clean)
+  name: Phone Wireless Charging Lights (Dim + Optional OFF)
   description: >
     Immediately dim lights when phone starts wireless charging.
     Supports optional second phone.
-    Also turns lights ON at a defined time on selected weekdays.
-    No delays, no timers.
+    Optional auto OFF after dim.
+    Scheduled ON on selected weekdays.
   domain: automation
 
   input:
@@ -56,6 +56,21 @@ blueprint:
           max: 100
           unit_of_measurement: "%"
 
+    enable_auto_off:
+      name: Enable auto OFF after dim
+      default: false
+      selector:
+        boolean: {}
+
+    auto_off_minutes:
+      name: Auto OFF after dim (minutes)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 240
+          unit_of_measurement: min
+
     on_time:
       name: Time to turn lights ON
       selector:
@@ -104,12 +119,17 @@ trigger:
     to: "on"
     id: phone2_charge
 
+  # Auto OFF timer finished
+  - platform: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.phone_wireless_dim_off
+    id: auto_off_done
+
   # Scheduled ON
   - platform: time
     at: !input on_time
     id: scheduled_on
-
-condition: []
 
 action:
   - choose:
@@ -140,6 +160,26 @@ action:
             target: !input dim_lights
             data:
               brightness_pct: !input dim_brightness
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ enable_auto_off }}"
+                sequence:
+                  - service: timer.start
+                    target:
+                      entity_id: timer.phone_wireless_dim_off
+                    data:
+                      duration:
+                        minutes: !input auto_off_minutes
+
+      # ───────── AUTO OFF ─────────
+      - conditions:
+          - condition: trigger
+            id: auto_off_done
+        sequence:
+          - service: light.turn_off
+            target: !input dim_lights
 
       # ───────── SCHEDULED ON (DAY + TIME) ─────────
       - conditions:
