@@ -1,0 +1,157 @@
+blueprint:
+  name: Phone Wireless Charging Lights (Clean)
+  description: >
+    Immediately dim lights when phone starts wireless charging.
+    Supports optional second phone.
+    Also turns lights ON at a defined time on selected weekdays.
+    No delays, no timers.
+  domain: automation
+
+  input:
+    phone1_charging:
+      name: Phone 1 – Charging sensor
+      selector:
+        entity:
+          domain: binary_sensor
+
+    phone1_charger_type:
+      name: Phone 1 – Charger type sensor
+      selector:
+        entity:
+          domain: sensor
+
+    use_second_phone:
+      name: Use second phone
+      default: false
+      selector:
+        boolean: {}
+
+    phone2_charging:
+      name: Phone 2 – Charging sensor
+      default: []
+      selector:
+        entity:
+          domain: binary_sensor
+
+    phone2_charger_type:
+      name: Phone 2 – Charger type sensor
+      default: []
+      selector:
+        entity:
+          domain: sensor
+
+    dim_lights:
+      name: Lights to dim when charging
+      selector:
+        target:
+          entity:
+            domain: light
+
+    dim_brightness:
+      name: Dim brightness (%)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    on_time:
+      name: Time to turn lights ON
+      selector:
+        time: {}
+
+    weekdays:
+      name: Active weekdays
+      selector:
+        select:
+          options:
+            - monday
+            - tuesday
+            - wednesday
+            - thursday
+            - friday
+            - saturday
+            - sunday
+          multiple: true
+
+    on_lights:
+      name: Lights to turn ON
+      selector:
+        target:
+          entity:
+            domain: light
+
+    on_brightness:
+      name: ON brightness (%)
+      default: 80
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+trigger:
+  # Phone 1 charging
+  - platform: state
+    entity_id: !input phone1_charging
+    to: "on"
+    id: phone1_charge
+
+  # Phone 2 charging
+  - platform: state
+    entity_id: !input phone2_charging
+    to: "on"
+    id: phone2_charge
+
+  # Scheduled ON
+  - platform: time
+    at: !input on_time
+    id: scheduled_on
+
+condition: []
+
+action:
+  - choose:
+
+      # ───────── DIM ON WIRELESS CHARGING ─────────
+      - conditions:
+          - condition: or
+            conditions:
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id: phone1_charge
+                  - condition: state
+                    entity_id: !input phone1_charger_type
+                    state: "wireless"
+
+              - condition: and
+                conditions:
+                  - condition: template
+                    value_template: "{{ use_second_phone }}"
+                  - condition: trigger
+                    id: phone2_charge
+                  - condition: state
+                    entity_id: !input phone2_charger_type
+                    state: "wireless"
+        sequence:
+          - service: light.turn_on
+            target: !input dim_lights
+            data:
+              brightness_pct: !input dim_brightness
+
+      # ───────── SCHEDULED ON (DAY + TIME) ─────────
+      - conditions:
+          - condition: trigger
+            id: scheduled_on
+          - condition: template
+            value_template: >
+              {{ now().strftime('%A') | lower in weekdays }}
+        sequence:
+          - service: light.turn_on
+            target: !input on_lights
+            data:
+              brightness_pct: !input on_brightness
+
+mode: restart
