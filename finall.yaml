@@ -7,8 +7,13 @@ blueprint:
   domain: automation
 
   input:
-    charging_sensor:
-      name: Phone charging sensor
+    charging_sensor_1:
+      name: Phone 1 charging sensor
+      selector:
+        entity:
+          domain: binary_sensor
+    charging_sensor_2:
+      name: Phone 2 charging sensor
       selector:
         entity:
           domain: binary_sensor
