@@ -99,4 +99,65 @@ trigger:
     id: ha_start
 
   - platform: event
-    ev
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.phone_charging_lights_off
+    id: off_timer_done
+
+  - platform: time
+    at: !input on_time
+    id: scheduled_on
+
+action:
+  - choose:
+
+      # ───────── IMMEDIATE DIM + START TIMER ─────────
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.id in ['charging_started','ha_start']
+                 and is_state('!input phone_charging_1','on') }}
+        sequence:
+          - service: light.turn_on
+            target: !input off_lights
+            data:
+              brightness_pct: !input dim_pct
+              transition: !input dim_transition
+
+          - service: timer.start
+            target:
+              entity_id: timer.phone_charging_lights_off
+            data:
+              duration:
+                minutes: !input off_timer_minutes
+
+      # ───────── TIMER DONE → OFF ─────────
+      - conditions:
+          - condition: trigger
+            id: off_timer_done
+        sequence:
+          - service: light.turn_off
+            target: !input off_lights
+
+      # ───────── SCHEDULED ON ─────────
+      - conditions:
+          - condition: trigger
+            id: scheduled_on
+        sequence:
+          - service: light.turn_on
+            target: !input on_lights
+            data:
+              brightness_pct: !input on_brightness_pct
+              rgb_color: !input start_color
+              transition: 0
+
+          - delay:
+              seconds: 1
+
+          - service: light.turn_on
+            target: !input on_lights
+            data:
+              rgb_color: !input end_color
+              transition: !input color_shift_seconds
+
+mode: restart
