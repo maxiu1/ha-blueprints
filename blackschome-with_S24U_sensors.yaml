@@ -1,18 +1,12 @@
 blueprint:
-  name: Sensor Light + Phone (FULL BALLISTIC v3)
+  name: Phone Wireless Charging Light
   description: >
-    Advanced smart light automation using motion, illuminance or sun,
-    with Samsung Galaxy S24 Ultra phone conditions, cancel logic,
-    cooldown, weekday/weekend and night control.
+    Control lights based on Samsung Galaxy S24 Ultra wireless charging.
+    Turns lights ON at defined brightness during a time window and
+    turns them OFF after a delay once wireless charging is detected.
   domain: automation
 
   input:
-    motion_sensor:
-      name: Motion Sensor
-      selector:
-        entity:
-          domain: binary_sensor
-
     light_target:
       name: Light(s)
       selector:
@@ -20,223 +14,77 @@ blueprint:
           entity:
             domain: light
 
-    no_motion_wait:
-      name: Wait after no motion (seconds)
-      default: 120
-      selector:
-        number:
-          min: 1
-          max: 3600
-          unit_of_measurement: seconds
-
-    illuminance_sensor:
-      name: (Optional) Illuminance Sensor
-      default: []
-      selector:
-        entity:
-          domain: sensor
-          device_class: illuminance
-
-    illuminance_threshold:
-      name: Illuminance Threshold
-      default: 20
-      selector:
-        number:
-          min: 0
-          max: 2000
-
-    sun_elevation:
-      name: (Optional) Sun elevation max
-      default: 5
-      selector:
-        number:
-          min: -10
-          max: 90
-
-    use_phone:
-      name: Enable phone conditions
-      default: false
-      selector:
-        boolean: {}
-
-    require_charging:
-      name: Require phone charging
-      default: false
-      selector:
-        boolean: {}
-
-    require_wireless:
-      name: Require wireless charging
-      default: false
-      selector:
-        boolean: {}
-
-    require_screen_on:
-      name: Require phone screen ON
-      default: false
-      selector:
-        boolean: {}
-
-    require_home:
-      name: Require phone at HOME
-      default: false
-      selector:
-        boolean: {}
-
-    battery_below:
-      name: Battery below %
-      default: 100
+    brightness_pct:
+      name: Turn ON brightness (%)
+      default: 30
       selector:
         number:
           min: 1
           max: 100
           unit_of_measurement: "%"
 
-    cancel_on_unplug:
-      name: Turn lights OFF when phone unplugged
-      default: false
-      selector:
-        boolean: {}
-
-    cancel_on_screen_off:
-      name: Turn lights OFF when screen turns OFF
-      default: false
-      selector:
-        boolean: {}
-
-    cooldown:
-      name: Cooldown (seconds)
-      default: 30
+    wireless_on_delay:
+      name: Turn OFF lights after wireless charging (seconds)
+      default: 300
       selector:
         number:
-          min: 0
-          max: 600
+          min: 10
+          max: 3600
           unit_of_measurement: seconds
 
-    allowed_days:
-      name: Allowed days
-      default: [mon, tue, wed, thu, fri, sat, sun]
-      selector:
-        select:
-          multiple: true
-          options:
-            - mon
-            - tue
-            - wed
-            - thu
-            - fri
-            - sat
-            - sun
-
-    night_start:
-      name: Night mode start
-      default: "22:00:00"
+    active_start:
+      name: Active time start
+      default: "18:00:00"
       selector:
         time: {}
 
-    night_end:
-      name: Night mode end
-      default: "06:00:00"
+    active_end:
+      name: Active time end
+      default: "23:59:00"
       selector:
         time: {}
 
 trigger:
+  # Wireless charging detected
   - platform: state
-    entity_id: !input motion_sensor
-    to: "on"
+    entity_id: sensor.s24ultra_charger_type
+    to: "wireless"
 
+  # Charging stopped (optional immediate off)
   - platform: state
-    entity_id: !input motion_sensor
-    from: "on"
-    to: "off"
-    for:
-      seconds: !input no_motion_wait
-
-  - platform: state
-    entity_id: binary_sensor.s24ultra_is_charging
-    to: "off"
-
-  - platform: state
-    entity_id: binary_sensor.s24ultra_interactive
-    to: "off"
+    entity_id: sensor.s24ultra_charger_type
+    from: "wireless"
 
 condition:
   - condition: template
     value_template: >
-      {{ now().strftime('%a')|lower in allowed_days }}
-
-  - condition: template
-    value_template: >
       {% set t = now().strftime('%H:%M:%S') %}
-      {{ t >= night_start or t <= night_end }}
+      {{ t >= active_start and t <= active_end }}
 
 action:
-  - delay:
-      seconds: !input cooldown
-
   - choose:
 
-      # ───── CANCEL: UNPLUG ─────
+      # ───── TURN ON LIGHTS (WIRELESS CHARGING) ─────
       - conditions:
           - condition: template
             value_template: >
-              {{ cancel_on_unplug and trigger.entity_id == 'binary_sensor.s24ultra_is_charging' }}
-        sequence:
-          - service: light.turn_off
-            target: !input light_target
-
-      # ───── CANCEL: SCREEN OFF ─────
-      - conditions:
-          - condition: template
-            value_template: >
-              {{ cancel_on_screen_off and trigger.entity_id == 'binary_sensor.s24ultra_interactive' }}
-        sequence:
-          - service: light.turn_off
-            target: !input light_target
-
-      # ───── TURN ON ─────
-      - conditions:
-          - condition: state
-            entity_id: !input motion_sensor
-            state: "on"
-
-          - condition: or
-            conditions:
-              - condition: numeric_state
-                entity_id: !input illuminance_sensor
-                below: !input illuminance_threshold
-              - condition: numeric_state
-                entity_id: sun.sun
-                attribute: elevation
-                below: !input sun_elevation
-
-          - condition: template
-            value_template: >
-              {% if not use_phone %}
-                true
-              {% else %}
-                {% set ok = true %}
-                {% if require_charging %}
-                  {% set ok = ok and is_state('binary_sensor.s24ultra_is_charging', 'on') %}
-                {% endif %}
-                {% if require_wireless %}
-                  {% set ok = ok and is_state('sensor.s24ultra_charger_type', 'wireless') %}
-                {% endif %}
-                {% if require_screen_on %}
-                  {% set ok = ok and is_state('binary_sensor.s24ultra_interactive', 'on') %}
-                {% endif %}
-                {% if require_home %}
-                  {% set ok = ok and is_state('device_tracker.s24ultra', 'home') %}
-                {% endif %}
-                {% set ok = ok and states('sensor.s24ultra_battery_level')|int < battery_below %}
-                {{ ok }}
-              {% endif %}
+              {{ trigger.to_state and trigger.to_state.state == 'wireless' }}
         sequence:
           - service: light.turn_on
             target: !input light_target
+            data:
+              brightness_pct: !input brightness_pct
 
-    default:
-      - service: light.turn_off
-        target: !input light_target
+          - delay:
+              seconds: !input wireless_on_delay
+
+          - condition: state
+            entity_id: sensor.s24ultra_charger_type
+            state: "wireless"
+
+          - service: light.turn_off
+            target: !input light_target
+
+    default: []
 
 mode: restart
