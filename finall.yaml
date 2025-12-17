@@ -1,8 +1,8 @@
 blueprint:
   name: Phone Charging (2 phones OR) → Night Light → Morning Light
   description: >
-    Night light when either phone is charging (OR logic),
-    then timed morning light on/off.
+    When either of two phones starts charging (OR), set bedroom lights to night mode,
+    wait X minutes, then turn off. Also turns lights on at a morning time and off at another.
   domain: automation
 
   input:
@@ -31,7 +31,7 @@ blueprint:
       selector:
         number:
           min: 1
-          max: 120
+          max: 180
           step: 1
           unit_of_measurement: minutes
 
@@ -46,7 +46,7 @@ blueprint:
           unit_of_measurement: "%"
 
     night_rgb:
-      name: Night RGB color
+      name: Night RGB color (dark red)
       default: [120, 0, 0]
       selector:
         color_rgb:
@@ -84,32 +84,26 @@ blueprint:
 mode: restart
 
 trigger:
-  # 📱 PHONE 1
   - platform: state
     entity_id: !input charging_sensor_1
     to: "on"
     id: phone_charging
 
-  # 📱 PHONE 2
   - platform: state
     entity_id: !input charging_sensor_2
     to: "on"
     id: phone_charging
 
-  # 🌅 MORNING ON
   - platform: time
     at: !input morning_on_time
     id: morning_on
 
-  # 🌙 MORNING OFF
   - platform: time
     at: !input morning_off_time
     id: morning_off
 
 action:
   - choose:
-
-      # 🌙 NIGHT MODE (OR logic handled by triggers)
       - conditions:
           - condition: trigger
             id: phone_charging
@@ -129,7 +123,6 @@ action:
             data:
               transition: 5
 
-      # 🌅 MORNING ON
       - conditions:
           - condition: trigger
             id: morning_on
@@ -141,7 +134,6 @@ action:
               kelvin: !input morning_kelvin
               transition: 10
 
-      # 🌙 MORNING OFF
       - conditions:
           - condition: trigger
             id: morning_off
