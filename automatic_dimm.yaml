@@ -1,7 +1,7 @@
 blueprint:
-  name: Phone Charging Lights (Immediate Dim – FINAL)
+  name: Phone Charging Lights (Immediate Dim – FINAL FIXED)
   description: >
-    Lights dim immediately when phone is charging (even if already charging),
+    Lights dim immediately when phone is charging,
     then turn OFF after a timer. Scheduled ON with color shift supported.
   domain: automation
 
@@ -89,79 +89,14 @@ blueprint:
           unit_of_measurement: seconds
 
 trigger:
-  # Charging just started
   - platform: state
     entity_id: !input phone_charging_1
     to: "on"
     id: charging_started
 
-  # HA restart / automation reload
   - platform: homeassistant
     event: start
     id: ha_start
 
-  # OFF timer finished
   - platform: event
-    event_type: timer.finished
-    event_data:
-      entity_id: timer.phone_charging_lights_off
-    id: off_timer_done
-
-  # Scheduled ON
-  - platform: time
-    at: !input on_time
-    id: scheduled_on
-
-action:
-  - choose:
-
-      # ───────── IMMEDIATE DIM (charging OR HA start) ─────────
-      - conditions:
-          - condition: template
-            value_template: >
-              {{ trigger.id in ['charging_started','ha_start']
-                 and is_state(phone_charging_1,'on') }}
-        sequence:
-          - service: light.turn_on
-            target: !input off_lights
-            data:
-              brightness_pct: !input dim_pct
-              transition: !input dim_transition
-
-          - service: timer.start
-            target:
-              entity_id: timer.phone_charging_lights_off
-            data:
-              duration:
-                minutes: !input off_timer_minutes
-
-      # ───────── TIMER DONE → OFF ─────────
-      - conditions:
-          - condition: trigger
-            id: off_timer_done
-        sequence:
-          - service: light.turn_off
-            target: !input off_lights
-
-      # ───────── SCHEDULED ON ─────────
-      - conditions:
-          - condition: trigger
-            id: scheduled_on
-        sequence:
-          - service: light.turn_on
-            target: !input on_lights
-            data:
-              brightness_pct: !input on_brightness_pct
-              rgb_color: !input start_color
-              transition: 0
-
-          - delay:
-              seconds: 1
-
-          - service: light.turn_on
-            target: !input on_lights
-            data:
-              rgb_color: !input end_color
-              transition: !input color_shift_seconds
-
-mode: restart
+    ev
