@@ -1,23 +1,25 @@
 blueprint:
-  name: Phone Charging (2 phones OR) → Night Light → Morning Light
+  name: Phone / Watch Charging → Night Light → Morning Light
   description: >
-    When either of two phones starts charging (OR), set bedroom lights to night mode,
-    wait X minutes, then turn off. Also turns lights on at a morning time and off at another.
+    When ANY selected device (phone, smartwatch, etc.) starts charging,
+    set bedroom lights to night mode, wait X minutes, then turn off.
+    Also turns lights on at a morning time and off at another.
     Includes weekday / weekend / custom day selection.
   domain: automation
 
   input:
-    charging_sensor_1:
-      name: Phone 1 charging sensor
+    ################################
+    # CHARGING DEVICES (NEW)
+    ################################
+    charging_sensors:
+      name: Charging sensors (phones, watches, etc.)
+      description: >
+        Select all charging sensors that should trigger night mode.
+        Example: phone + smartwatch.
       selector:
         entity:
           domain: binary_sensor
-
-    charging_sensor_2:
-      name: Phone 2 charging sensor
-      selector:
-        entity:
-          domain: binary_sensor
+          multiple: true
 
     target_lights:
       name: Lights / Light group
@@ -27,11 +29,10 @@ blueprint:
             domain: light
 
     ################################
-    # DAY PICKER (NEW)
+    # DAY PICKER
     ################################
     day_mode:
       name: Days of week
-      description: Choose when the automation is allowed to run
       default: weekdays
       selector:
         select:
@@ -139,6 +140,7 @@ mode: restart
 # VARIABLES
 ################################
 variables:
+  charging_sensors: !input charging_sensors
   day_mode: !input day_mode
   custom_days: !input custom_days
 
@@ -157,14 +159,9 @@ variables:
 ################################
 trigger:
   - platform: state
-    entity_id: !input charging_sensor_1
+    entity_id: !input charging_sensors
     to: "on"
-    id: phone_charging
-
-  - platform: state
-    entity_id: !input charging_sensor_2
-    to: "on"
-    id: phone_charging
+    id: charging_started
 
   - platform: time
     at: !input morning_on_time
@@ -175,7 +172,7 @@ trigger:
     id: morning_off
 
 ################################
-# CONDITIONS (DAY FILTER)
+# CONDITIONS
 ################################
 condition:
   - condition: template
@@ -186,9 +183,12 @@ condition:
 ################################
 action:
   - choose:
+      ################################
+      # NIGHT MODE (ANY DEVICE CHARGING)
+      ################################
       - conditions:
           - condition: trigger
-            id: phone_charging
+            id: charging_started
         sequence:
           - service: light.turn_on
             target: !input target_lights
@@ -205,6 +205,9 @@ action:
             data:
               transition: 5
 
+      ################################
+      # MORNING ON
+      ################################
       - conditions:
           - condition: trigger
             id: morning_on
@@ -216,6 +219,9 @@ action:
               kelvin: !input morning_kelvin
               transition: 10
 
+      ################################
+      # MORNING OFF
+      ################################
       - conditions:
           - condition: trigger
             id: morning_off
