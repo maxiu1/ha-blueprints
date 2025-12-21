@@ -4,7 +4,7 @@ blueprint:
     Immediately dim lights when phone starts wireless charging.
     Supports optional second phone.
     Optional auto OFF after dim.
-    Scheduled ON on selected weekdays with optional enable switch.
+    Scheduled ON on selected weekdays with enable switch.
   domain: automation
 
   input:
@@ -145,6 +145,7 @@ action:
       - conditions:
           - condition: or
             conditions:
+
               - condition: and
                 conditions:
                   - condition: trigger
@@ -155,13 +156,15 @@ action:
 
               - condition: and
                 conditions:
-                  - condition: template
-                    value_template: "{{ use_second_phone }}"
                   - condition: trigger
                     id: phone2_charge
+                  - condition: template
+                    value_template: >
+                      {{ states('!input use_second_phone') == 'on' }}
                   - condition: state
                     entity_id: !input phone2_charger_type
                     state: "wireless"
+
         sequence:
           - service: light.turn_on
             target: !input dim_lights
@@ -171,7 +174,8 @@ action:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ enable_auto_off }}"
+                    value_template: >
+                      {{ states('!input enable_auto_off') == 'on' }}
                 sequence:
                   - service: timer.start
                     target:
@@ -193,4 +197,18 @@ action:
           - condition: trigger
             id: scheduled_on
 
-          -
+          - condition: template
+            value_template: >
+              {{ states('!input enable_morning_alarm') == 'on' }}
+
+          - condition: template
+            value_template: >
+              {{ now().strftime('%A') | lower in weekdays }}
+
+        sequence:
+          - service: light.turn_on
+            target: !input on_lights
+            data:
+              brightness_pct: !input on_brightness
+
+mode: restart
