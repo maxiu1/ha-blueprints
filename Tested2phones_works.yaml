@@ -1,10 +1,10 @@
 blueprint:
-  name: Phone Wireless Charging Lights (Dim + Optional OFF)
+  name: Phone Wireless Charging Lights (Dim + Optional OFF + Morning Alarm)
   description: >
     Immediately dim lights when phone starts wireless charging.
     Supports optional second phone.
     Optional auto OFF after dim.
-    Scheduled ON on selected weekdays.
+    Scheduled ON on selected weekdays with optional enable switch.
   domain: automation
 
   input:
@@ -106,6 +106,13 @@ blueprint:
           max: 100
           unit_of_measurement: "%"
 
+    enable_morning_alarm:
+      name: Enable morning alarm lights
+      description: Enable/disable scheduled morning lights
+      default: true
+      selector:
+        boolean: {}
+
 trigger:
   # Phone 1 charging
   - platform: state
@@ -181,17 +188,9 @@ action:
           - service: light.turn_off
             target: !input dim_lights
 
-      # ───────── SCHEDULED ON (DAY + TIME) ─────────
+      # ───────── SCHEDULED ON (DAY + TIME + SWITCH) ─────────
       - conditions:
           - condition: trigger
             id: scheduled_on
-          - condition: template
-            value_template: >
-              {{ now().strftime('%A') | lower in weekdays }}
-        sequence:
-          - service: light.turn_on
-            target: !input on_lights
-            data:
-              brightness_pct: !input on_brightness
 
-mode: restart
+          -
