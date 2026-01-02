@@ -1,0 +1,263 @@
+blueprint:
+  name: Phone Wireless Charging Lights (Dim + Optional OFF + Morning Alarm) [PRO]
+  description: >
+    Immediately dim lights when phone starts wireless charging (wireless only).
+    Supports optional second phone.
+    Optional auto OFF after dim (no external timer helper needed).
+    Scheduled ON on selected weekdays with enable switch.
+  domain: automation
+
+  input:
+    phone1_charging:
+      name: Phone 1 – Charging sensor
+      selector:
+        entity:
+          domain: binary_sensor
+
+    phone1_charger_type:
+      name: Phone 1 – Charger type sensor
+      description: Must return "wireless" when on a wireless charger
+      selector:
+        entity:
+          domain: sensor
+
+    use_second_phone:
+      name: Use second phone
+      default: false
+      selector:
+        boolean: {}
+
+    phone2_charging:
+      name: Phone 2 – Charging sensor
+      default: []
+      selector:
+        entity:
+          domain: binary_sensor
+
+    phone2_charger_type:
+      name: Phone 2 – Charger type sensor
+      description: Must return "wireless" when on a wireless charger
+      default: []
+      selector:
+        entity:
+          domain: sensor
+
+    dim_lights:
+      name: Lights to dim when charging
+      selector:
+        target:
+          entity:
+            domain: light
+
+    dim_brightness:
+      name: Dim brightness (%)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    dim_transition:
+      name: Dim transition (seconds)
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 30
+          unit_of_measurement: s
+
+    enable_auto_off:
+      name: Enable auto OFF after dim
+      default: false
+      selector:
+        boolean: {}
+
+    auto_off_minutes:
+      name: Auto OFF after dim (minutes)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 240
+          unit_of_measurement: min
+
+    on_time:
+      name: Time to turn lights ON
+      selector:
+        time: {}
+
+    weekdays:
+      name: Active weekdays
+      selector:
+        select:
+          options:
+            - monday
+            - tuesday
+            - wednesday
+            - thursday
+            - friday
+            - saturday
+            - sunday
+          multiple: true
+
+    on_lights:
+      name: Lights to turn ON
+      selector:
+        target:
+          entity:
+            domain: light
+
+    on_brightness:
+      name: ON brightness (%)
+      default: 80
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    on_transition:
+      name: ON transition (seconds)
+      default: 2
+      selector:
+        number:
+          min: 0
+          max: 30
+          unit_of_measurement: s
+
+    enable_morning_alarm:
+      name: Enable morning alarm lights
+      description: Enable/disable scheduled morning lights
+      default: true
+      selector:
+        boolean: {}
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  # Phone 1 charging (debounced)
+  - platform: state
+    entity_id: !input phone1_charging
+    to: "on"
+    for: "00:00:03"
+    id: phone1_charge
+
+  # Phone 2 charging (debounced)
+  - platform: state
+    entity_id: !input phone2_charging
+    to: "on"
+    for: "00:00:03"
+    id: phone2_charge
+
+  # Scheduled ON
+  - platform: time
+    at: !input on_time
+    id: scheduled_on
+
+action:
+  - variables:
+      # Inputs as real variables (so templates work)
+      use_second: !input use_second_phone
+      auto_off_enabled: !input enable_auto_off
+      morning_enabled: !input enable_morning_alarm
+      days: !input weekdays
+
+      p1_charge: !input phone1_charging
+      p1_type: !input phone1_charger_type
+      p2_charge: !input phone2_charging
+      p2_type: !input phone2_charger_type
+
+      off_timeout: !input auto_off_minutes
+
+  - choose:
+
+      # ───────── DIM ON WIRELESS CHARGING ─────────
+      - conditions:
+          - condition: or
+            conditions:
+
+              # Phone 1, wireless
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id: phone1_charge
+                  - condition: state
+                    entity_id: !input phone1_charger_type
+                    state: "wireless"
+
+              # Phone 2 enabled + wireless
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id: phone2_charge
+                  - condition: template
+                    value_template: "{{ use_second }}"
+                  - condition: state
+                    entity_id: !input phone2_charger_type
+                    state: "wireless"
+
+        sequence:
+          # Dim lights
+          - service: light.turn_on
+            target: !input dim_lights
+            data:
+              brightness_pct: !input dim_brightness
+              transition: !input dim_transition
+
+          # Optional auto-off (no helper timer)
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ auto_off_enabled }}"
+                sequence:
+                  # Wait until charging stops for the triggering phone, OR timeout
+                  - choose:
+                      - conditions:
+                          - condition: trigger
+                            id: phone1_charge
+                        sequence:
+                          - wait_for_trigger:
+                              - platform: state
+                                entity_id: !input phone1_charging
+                                to: "off"
+                            timeout:
+                              minutes: !input auto_off_minutes
+                            continue_on_timeout: true
+
+                      - conditions:
+                          - condition: trigger
+                            id: phone2_charge
+                        sequence:
+                          - wait_for_trigger:
+                              - platform: state
+                                entity_id: !input phone2_charging
+                                to: "off"
+                            timeout:
+                              minutes: !input auto_off_minutes
+                            continue_on_timeout: true
+
+                  # If we timed out (still charging) OR even if stopped — we follow your original meaning: OFF after X minutes.
+                  # If you want "OFF only if still charging", tell me and I'll flip it.
+                  - delay:
+                      minutes: 0  # keeps structure stable
+                  - service: light.turn_off
+                    target: !input dim_lights
+                    data:
+                      transition: !input dim_transition
+
+      # ───────── SCHEDULED ON (DAY + TIME + SWITCH) ─────────
+      - conditions:
+          - condition: trigger
+            id: scheduled_on
+          - condition: template
+            value_template: "{{ morning_enabled }}"
+          - condition: template
+            value_template: "{{ now().strftime('%A')|lower in days }}"
+        sequence:
+          - service: light.turn_on
+            target: !input on_lights
+            data:
+              brightness_pct: !input on_brightness
+              transition: !input on_transition
