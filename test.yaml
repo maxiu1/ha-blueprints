@@ -1,11 +1,11 @@
 blueprint:
-  name: Phone Wireless Charging Lights (Dim + Optional OFF + Morning Alarm + Optional Scenes + Better Weekdays)
+  name: Phone Wireless Charging Lights (DIM Scene Daily + Morning Scene Mon-Fri)
   description: >
-    Dim lights when phone starts *wireless* charging.
+    DIM: when phone starts wireless charging (every day).
     Optional second phone.
     Optional auto OFF after dim.
-    Scheduled morning ON with: Custom days (checkbox-like), Weekdays (Mon–Fri), or Every day.
-    Optional scenes for DIM and MORNING (with toggles).
+    Morning: scheduled ON only on Mon–Fri by default (or change to custom/everyday).
+    Optional scenes for DIM and MORNING with toggles.
   domain: automation
 
   input:
@@ -27,7 +27,6 @@ blueprint:
       selector:
         boolean: {}
 
-    # Phone2 as optional list (can be empty)
     phone2_charging:
       name: Phone 2 – Charging sensor
       default: []
@@ -52,7 +51,7 @@ blueprint:
 
     enable_dim_scene:
       name: Use DIM scene (instead of brightness)
-      default: false
+      default: true
       selector:
         boolean: {}
 
@@ -87,24 +86,25 @@ blueprint:
           max: 240
           unit_of_measurement: min
 
+    # ---- Morning schedule ----
     on_time:
-      name: Time to turn lights ON
+      name: Morning time to turn lights ON
       selector:
         time: {}
 
     weekday_mode:
       name: Morning days mode
-      description: custom = pick days, weekdays = Mon–Fri, everyday = all days
-      default: custom
+      description: weekdays = Mon–Fri, custom = pick days, everyday = all days
+      default: weekdays
       selector:
         select:
           options:
-            - custom
             - weekdays
+            - custom
             - everyday
 
     weekdays_custom:
-      name: Custom days (checkbox-like)
+      name: Morning custom days (checkbox-like)
       description: Used only when weekday_mode = custom
       default:
         - monday
@@ -125,7 +125,7 @@ blueprint:
             - sunday
 
     on_lights:
-      name: Lights to turn ON
+      name: Morning lights target (used if morning scene disabled)
       selector:
         target:
           entity:
@@ -133,7 +133,7 @@ blueprint:
 
     enable_morning_scene:
       name: Use MORNING scene (instead of brightness)
-      default: false
+      default: true
       selector:
         boolean: {}
 
@@ -145,7 +145,7 @@ blueprint:
           domain: scene
 
     on_brightness:
-      name: ON brightness (%)
+      name: Morning brightness (%)
       default: 80
       selector:
         number:
@@ -195,12 +195,10 @@ variables:
 action:
   - choose:
 
-      # ───────── DIM ON WIRELESS CHARGING ─────────
+      # ───────── DIM ON WIRELESS CHARGING (EVERY DAY) ─────────
       - conditions:
           - condition: or
             conditions:
-
-              # Phone 1 (wireless)
               - condition: and
                 conditions:
                   - condition: trigger
@@ -209,7 +207,6 @@ action:
                     entity_id: !input phone1_charger_type
                     state: "wireless"
 
-              # Phone 2 (only if enabled + wireless)
               - condition: and
                 conditions:
                   - condition: trigger
@@ -245,7 +242,7 @@ action:
                   - service: light.turn_off
                     target: !input dim_lights
 
-      # ───────── SCHEDULED ON (DAY + TIME + SWITCH) ─────────
+      # ───────── MORNING SCHEDULE (MON–FRI DEFAULT) ─────────
       - conditions:
           - condition: trigger
             id: scheduled_on
