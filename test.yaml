@@ -1,0 +1,278 @@
+blueprint:
+  name: Phone Wireless Charging Lights (Dim + Optional OFF + Morning Alarm + Optional Scenes + Better Weekdays)
+  description: >
+    Dim lights when phone starts *wireless* charging.
+    Optional second phone.
+    Optional auto OFF after dim.
+    Scheduled morning ON with: Custom days (checkbox-like), Weekdays (Mon–Fri), or Every day.
+    Optional scenes for DIM and MORNING (with toggles).
+  domain: automation
+
+  input:
+    phone1_charging:
+      name: Phone 1 – Charging sensor
+      selector:
+        entity:
+          domain: binary_sensor
+
+    phone1_charger_type:
+      name: Phone 1 – Charger type sensor
+      selector:
+        entity:
+          domain: sensor
+
+    use_second_phone:
+      name: Use second phone
+      default: false
+      selector:
+        boolean: {}
+
+    # Phone2 as optional list (can be empty)
+    phone2_charging:
+      name: Phone 2 – Charging sensor
+      default: []
+      selector:
+        entity:
+          domain: binary_sensor
+          multiple: true
+
+    phone2_charger_type:
+      name: Phone 2 – Charger type sensor
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+
+    dim_lights:
+      name: Lights to dim when charging
+      selector:
+        target:
+          entity:
+            domain: light
+
+    enable_dim_scene:
+      name: Use DIM scene (instead of brightness)
+      default: false
+      selector:
+        boolean: {}
+
+    dim_scene:
+      name: DIM scene
+      default: ""
+      selector:
+        entity:
+          domain: scene
+
+    dim_brightness:
+      name: Dim brightness (%)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    enable_auto_off:
+      name: Enable auto OFF after dim
+      default: false
+      selector:
+        boolean: {}
+
+    auto_off_minutes:
+      name: Auto OFF after dim (minutes)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 240
+          unit_of_measurement: min
+
+    on_time:
+      name: Time to turn lights ON
+      selector:
+        time: {}
+
+    weekday_mode:
+      name: Morning days mode
+      description: custom = pick days, weekdays = Mon–Fri, everyday = all days
+      default: custom
+      selector:
+        select:
+          options:
+            - custom
+            - weekdays
+            - everyday
+
+    weekdays_custom:
+      name: Custom days (checkbox-like)
+      description: Used only when weekday_mode = custom
+      default:
+        - monday
+        - tuesday
+        - wednesday
+        - thursday
+        - friday
+      selector:
+        select:
+          multiple: true
+          options:
+            - monday
+            - tuesday
+            - wednesday
+            - thursday
+            - friday
+            - saturday
+            - sunday
+
+    on_lights:
+      name: Lights to turn ON
+      selector:
+        target:
+          entity:
+            domain: light
+
+    enable_morning_scene:
+      name: Use MORNING scene (instead of brightness)
+      default: false
+      selector:
+        boolean: {}
+
+    morning_scene:
+      name: MORNING scene
+      default: ""
+      selector:
+        entity:
+          domain: scene
+
+    on_brightness:
+      name: ON brightness (%)
+      default: 80
+      selector:
+        number:
+          min: 1
+          max: 100
+          unit_of_measurement: "%"
+
+    enable_morning_alarm:
+      name: Enable morning alarm lights
+      default: true
+      selector:
+        boolean: {}
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input phone1_charging
+    to: "on"
+    id: phone1_charge
+
+  - platform: state
+    entity_id: !input phone2_charging
+    to: "on"
+    id: phone2_charge
+
+  - platform: time
+    at: !input on_time
+    id: scheduled_on
+
+variables:
+  use_second_phone: !input use_second_phone
+  enable_auto_off: !input enable_auto_off
+  enable_morning_alarm: !input enable_morning_alarm
+
+  enable_dim_scene: !input enable_dim_scene
+  dim_scene: !input dim_scene
+
+  enable_morning_scene: !input enable_morning_scene
+  morning_scene: !input morning_scene
+
+  weekday_mode: !input weekday_mode
+  weekdays_custom: !input weekdays_custom
+
+  phone2_charger_type: !input phone2_charger_type
+
+action:
+  - choose:
+
+      # ───────── DIM ON WIRELESS CHARGING ─────────
+      - conditions:
+          - condition: or
+            conditions:
+
+              # Phone 1 (wireless)
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id: phone1_charge
+                  - condition: state
+                    entity_id: !input phone1_charger_type
+                    state: "wireless"
+
+              # Phone 2 (only if enabled + wireless)
+              - condition: and
+                conditions:
+                  - condition: trigger
+                    id: phone2_charge
+                  - condition: template
+                    value_template: "{{ use_second_phone }}"
+                  - condition: template
+                    value_template: >
+                      {{ phone2_charger_type != '' and is_state(phone2_charger_type, 'wireless') }}
+
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ enable_dim_scene and dim_scene != '' }}"
+                sequence:
+                  - service: scene.turn_on
+                    target:
+                      entity_id: !input dim_scene
+            default:
+              - service: light.turn_on
+                target: !input dim_lights
+                data:
+                  brightness_pct: !input dim_brightness
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ enable_auto_off }}"
+                sequence:
+                  - delay:
+                      minutes: !input auto_off_minutes
+                  - service: light.turn_off
+                    target: !input dim_lights
+
+      # ───────── SCHEDULED ON (DAY + TIME + SWITCH) ─────────
+      - conditions:
+          - condition: trigger
+            id: scheduled_on
+          - condition: template
+            value_template: "{{ enable_morning_alarm }}"
+          - condition: template
+            value_template: >
+              {% set today = now().strftime('%A') | lower %}
+              {% if weekday_mode == 'everyday' %}
+                true
+              {% elif weekday_mode == 'weekdays' %}
+                {{ today in ['monday','tuesday','wednesday','thursday','friday'] }}
+              {% else %}
+                {{ today in (weekdays_custom or []) }}
+              {% endif %}
+
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ enable_morning_scene and morning_scene != '' }}"
+                sequence:
+                  - service: scene.turn_on
+                    target:
+                      entity_id: !input morning_scene
+            default:
+              - service: light.turn_on
+                target: !input on_lights
+                data:
+                  brightness_pct: !input on_brightness
