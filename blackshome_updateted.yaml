@@ -1,9 +1,9 @@
 blueprint:
-  name: Sensor Light + Wireless Charger Type
+  name: Sensor Light (Motion + Optional Lux/Sun + Wireless Charger Type)
   description: >
-    Motion-based light automation with optional illuminance/sun checks,
-    plus optional Wireless Charging trigger using a "charger type" sensor
-    (e.g. sensor.s24u_charger_type == wireless).
+    Turns lights on by motion and/or by "wireless charger type" sensor (e.g. sensor.s24u_charger_type == wireless).
+    Optional illuminance & sun elevation conditions.
+    Turns lights off after no motion AND not wireless for configured time.
   domain: automation
 
   input:
@@ -21,7 +21,7 @@ blueprint:
             domain: light
 
     no_motion_wait:
-      name: Wait time after no motion / no wireless (seconds)
+      name: Wait time after no motion AND not wireless (seconds)
       default: 120
       selector:
         number:
@@ -31,7 +31,7 @@ blueprint:
 
     illuminance_sensor:
       name: (Optional) Illuminance Sensor
-      default: []
+      default: ""
       selector:
         entity:
           domain: sensor
@@ -43,7 +43,7 @@ blueprint:
       selector:
         number:
           min: 0
-          max: 1000
+          max: 10000
 
     sun_elevation:
       name: (Optional) Sun Elevation Max
@@ -55,53 +55,66 @@ blueprint:
           max: 90
 
     charger_type_sensor:
-      name: (Optional) Phone Charger Type Sensor
+      name: (Optional) Charger type sensor
       description: >
-        Sensor that reports charger type (e.g. ac / usb / wireless / dock / none).
-        Example: sensor.s24u_charger_type
-      default: []
+        Entity like sensor.s24u_charger_type with values: ac/usb/wireless/dock/none
+      default: ""
       selector:
         entity:
           domain: sensor
 
     wireless_value:
       name: Charger type value for wireless
-      description: Usually "wireless"
-      default: "wireless"
+      default: wireless
       selector:
         text: {}
 
     charger_ignores_lux:
-      name: Wireless trigger ignores lux/sun conditions
-      description: If enabled, wireless charging can turn lights on regardless of lux/sun.
+      name: Wireless charging ignores lux/sun conditions
       default: true
       selector:
         boolean: {}
 
 mode: restart
 
+variables:
+  motion_sensor: !input motion_sensor
+  light_target: !input light_target
+  no_motion_wait: !input no_motion_wait
+  illuminance_sensor: !input illuminance_sensor
+  illuminance_threshold: !input illuminance_threshold
+  sun_elevation: !input sun_elevation
+  charger_type_sensor: !input charger_type_sensor
+  wireless_value: !input wireless_value
+  charger_ignores_lux: !input charger_ignores_lux
+
 trigger:
-  # Motion ON
-  - platform: state
+  # Motion starts -> ON evaluation
+  - id: motion_on
+    platform: state
     entity_id: !input motion_sensor
     to: "on"
 
-  # Motion OFF for X seconds (we'll decide in action whether to turn off)
-  - platform: state
+  # Motion ended for X seconds -> OFF evaluation (only if not wireless too)
+  - id: motion_off_wait
+    platform: state
     entity_id: !input motion_sensor
     to: "off"
     for:
       seconds: !input no_motion_wait
 
-  # Charger type becomes wireless
-  - platform: state
+  # Charger becomes wireless -> ON evaluation
+  - id: wireless_on
+    platform: state
     entity_id: !input charger_type_sensor
     to: !input wireless_value
 
-  # Charger type becomes not-wireless for X seconds
-  - platform: state
-    entity_id: !input charger_type_sensor
-    from: !input wireless_value
+  # "Not wireless" for X seconds -> OFF evaluation (only if motion also off)
+  # Use template trigger so we can do "not equal wireless" cleanly.
+  - id: wireless_off_wait
+    platform: template
+    value_template: >
+      {{ charger_type_sensor != '' and states(charger_type_sensor) != wireless_value }}
     for:
       seconds: !input no_motion_wait
 
@@ -109,28 +122,33 @@ condition: []
 
 action:
   - variables:
-      motion_on: "{{ is_state((!input motion_sensor), 'on') }}"
-      has_charger_type: "{{ (!input charger_type_sensor) != [] }}"
+      motion_on: "{{ is_state(motion_sensor, 'on') }}"
+
       wireless_now: >-
-        {% if (!input charger_type_sensor) == [] %}
+        {% if charger_type_sensor == '' %}
           false
         {% else %}
-          {{ is_state((!input charger_type_sensor), (!input wireless_value)) }}
+          {{ is_state(charger_type_sensor, wireless_value) }}
         {% endif %}
+
       lux_ok: >-
-        {% if (!input illuminance_sensor) == [] %}
+        {% if illuminance_sensor == '' %}
           true
         {% else %}
-          {{ states((!input illuminance_sensor))|float(999999) < (!input illuminance_threshold)|float(0) }}
+          {{ states(illuminance_sensor) | float(999999) < (illuminance_threshold | float(0)) }}
         {% endif %}
-      sun_ok: "{{ state_attr('sun.sun','elevation')|float(999999) < (!input sun_elevation)|float(0) }}"
+
+      sun_ok: "{{ state_attr('sun.sun','elevation') | float(999999) < (sun_elevation | float(0)) }}"
+
       env_ok: "{{ lux_ok or sun_ok }}"
+
       should_turn_on: >-
-        {% if wireless_now and is_state((!input charger_ignores_lux)|string, 'True') %}
+        {% if wireless_now and charger_ignores_lux %}
           true
         {% else %}
           {{ (motion_on or wireless_now) and env_ok }}
         {% endif %}
+
       should_turn_off: "{{ (not motion_on) and (not wireless_now) }}"
 
   - choose:
@@ -142,6 +160,7 @@ action:
             target: !input light_target
 
     default:
+      # Only turn off when BOTH are inactive (no motion + not wireless)
       - choose:
           - conditions:
               - condition: template
