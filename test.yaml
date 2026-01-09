@@ -51,7 +51,7 @@ blueprint:
             domain: light
 
     enable_dim_scene:
-      name: Use DIM scene (instead of brightness)
+      name: Use DIM scene
       default: true
       selector:
         boolean: {}
@@ -87,7 +87,7 @@ blueprint:
           max: 240
           unit_of_measurement: min
 
-    # ─── MORNING SCHEDULE ───
+    # ─── MORNING ───
     on_time:
       name: Morning ON time
       selector:
@@ -100,7 +100,6 @@ blueprint:
 
     weekday_mode:
       name: Morning days mode
-      description: weekdays = Mon–Fri, custom = pick days, everyday = all days
       default: weekdays
       selector:
         select:
@@ -110,8 +109,7 @@ blueprint:
             - everyday
 
     weekdays_custom:
-      name: Morning custom days (checkbox-like)
-      description: Used only when weekday_mode = custom
+      name: Morning custom days
       default:
         - monday
         - tuesday
@@ -137,14 +135,14 @@ blueprint:
         boolean: {}
 
     on_lights:
-      name: Morning lights target (used when morning ON scene disabled)
+      name: Morning lights target
       selector:
         target:
           entity:
             domain: light
 
     enable_morning_on_scene:
-      name: Use MORNING ON scene (instead of brightness)
+      name: Use MORNING ON scene
       default: true
       selector:
         boolean: {}
@@ -157,16 +155,15 @@ blueprint:
           domain: scene
 
     on_brightness:
-      name: Morning ON brightness (%)
+      name: Morning brightness (%)
       default: 80
       selector:
         number:
           min: 1
           max: 100
-          unit_of_measurement: "%"
 
     enable_morning_off_scene:
-      name: Use MORNING OFF scene (instead of turning lights off)
+      name: Use MORNING OFF scene
       default: false
       selector:
         boolean: {}
@@ -179,8 +176,7 @@ blueprint:
           domain: scene
 
     off_lights:
-      name: Lights to turn OFF at off_time
-      description: Usually same as ON lights; can be different.
+      name: Lights to turn OFF
       selector:
         target:
           entity:
@@ -210,20 +206,15 @@ trigger:
 variables:
   use_second_phone: !input use_second_phone
   enable_auto_off: !input enable_auto_off
-
   enable_dim_scene: !input enable_dim_scene
   dim_scene: !input dim_scene
-
-  weekday_mode: !input weekday_mode
-  weekdays_custom: !input weekdays_custom
   enable_morning_alarm: !input enable_morning_alarm
-
   enable_morning_on_scene: !input enable_morning_on_scene
   morning_on_scene: !input morning_on_scene
-
   enable_morning_off_scene: !input enable_morning_off_scene
   morning_off_scene: !input morning_off_scene
-
+  weekday_mode: !input weekday_mode
+  weekdays_custom: !input weekdays_custom
   phone2_charger_type: !input phone2_charger_type
 
   is_morning_day: >
@@ -239,7 +230,7 @@ variables:
 action:
   - choose:
 
-      # ───────── DIM ON WIRELESS CHARGING (EVERY DAY) ─────────
+      # ───── DIM ─────
       - conditions:
           - condition: or
             conditions:
@@ -268,7 +259,7 @@ action:
                     value_template: "{{ enable_dim_scene and dim_scene != '' }}"
                 sequence:
                   - service: scene.turn_on
-                    target:
+                    data:
                       entity_id: !input dim_scene
             default:
               - service: light.turn_on
@@ -286,7 +277,7 @@ action:
                   - service: light.turn_off
                     target: !input dim_lights
 
-      # ───────── MORNING ON (Mon–Fri default) ─────────
+      # ───── MORNING ON ─────
       - conditions:
           - condition: trigger
             id: scheduled_on
@@ -300,7 +291,7 @@ action:
                     value_template: "{{ enable_morning_on_scene and morning_on_scene != '' }}"
                 sequence:
                   - service: scene.turn_on
-                    target:
+                    data:
                       entity_id: !input morning_on_scene
             default:
               - service: light.turn_on
@@ -308,7 +299,7 @@ action:
                 data:
                   brightness_pct: !input on_brightness
 
-      # ───────── MORNING OFF (Mon–Fri default) ─────────
+      # ───── MORNING OFF ─────
       - conditions:
           - condition: trigger
             id: scheduled_off
@@ -322,7 +313,7 @@ action:
                     value_template: "{{ enable_morning_off_scene and morning_off_scene != '' }}"
                 sequence:
                   - service: scene.turn_on
-                    target:
+                    data:
                       entity_id: !input morning_off_scene
             default:
               - service: light.turn_off
