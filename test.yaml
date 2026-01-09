@@ -1,11 +1,11 @@
 blueprint:
-  name: Phone Wireless Charging Lights (DIM Scene Daily + Morning Scene Mon-Fri)
+  name: Phone Wireless Charging Lights (DIM Daily + Morning ON/OFF Mon-Fri + Optional Scenes)
   description: >
     DIM: when phone starts wireless charging (every day).
     Optional second phone.
     Optional auto OFF after dim.
-    Morning: scheduled ON only on Mon–Fri by default (or change to custom/everyday).
-    Optional scenes for DIM and MORNING with toggles.
+    Morning: scheduled ON/OFF with day selection (default Mon–Fri).
+    Optional scenes for DIM, MORNING ON and MORNING OFF (each with toggles).
   domain: automation
 
   input:
@@ -42,6 +42,7 @@ blueprint:
         entity:
           domain: sensor
 
+    # ─── DIM ───
     dim_lights:
       name: Lights to dim when charging
       selector:
@@ -86,9 +87,14 @@ blueprint:
           max: 240
           unit_of_measurement: min
 
-    # ---- Morning schedule ----
+    # ─── MORNING SCHEDULE ───
     on_time:
-      name: Morning time to turn lights ON
+      name: Morning ON time
+      selector:
+        time: {}
+
+    off_time:
+      name: Morning OFF time
       selector:
         time: {}
 
@@ -124,28 +130,34 @@ blueprint:
             - saturday
             - sunday
 
+    enable_morning_alarm:
+      name: Enable morning schedule (ON/OFF)
+      default: true
+      selector:
+        boolean: {}
+
     on_lights:
-      name: Morning lights target (used if morning scene disabled)
+      name: Morning lights target (used when morning ON scene disabled)
       selector:
         target:
           entity:
             domain: light
 
-    enable_morning_scene:
-      name: Use MORNING scene (instead of brightness)
+    enable_morning_on_scene:
+      name: Use MORNING ON scene (instead of brightness)
       default: true
       selector:
         boolean: {}
 
-    morning_scene:
-      name: MORNING scene
+    morning_on_scene:
+      name: MORNING ON scene
       default: ""
       selector:
         entity:
           domain: scene
 
     on_brightness:
-      name: Morning brightness (%)
+      name: Morning ON brightness (%)
       default: 80
       selector:
         number:
@@ -153,11 +165,26 @@ blueprint:
           max: 100
           unit_of_measurement: "%"
 
-    enable_morning_alarm:
-      name: Enable morning alarm lights
-      default: true
+    enable_morning_off_scene:
+      name: Use MORNING OFF scene (instead of turning lights off)
+      default: false
       selector:
         boolean: {}
+
+    morning_off_scene:
+      name: MORNING OFF scene
+      default: ""
+      selector:
+        entity:
+          domain: scene
+
+    off_lights:
+      name: Lights to turn OFF at off_time
+      description: Usually same as ON lights; can be different.
+      selector:
+        target:
+          entity:
+            domain: light
 
 mode: restart
 
@@ -176,21 +203,38 @@ trigger:
     at: !input on_time
     id: scheduled_on
 
+  - platform: time
+    at: !input off_time
+    id: scheduled_off
+
 variables:
   use_second_phone: !input use_second_phone
   enable_auto_off: !input enable_auto_off
-  enable_morning_alarm: !input enable_morning_alarm
 
   enable_dim_scene: !input enable_dim_scene
   dim_scene: !input dim_scene
 
-  enable_morning_scene: !input enable_morning_scene
-  morning_scene: !input morning_scene
-
   weekday_mode: !input weekday_mode
   weekdays_custom: !input weekdays_custom
+  enable_morning_alarm: !input enable_morning_alarm
+
+  enable_morning_on_scene: !input enable_morning_on_scene
+  morning_on_scene: !input morning_on_scene
+
+  enable_morning_off_scene: !input enable_morning_off_scene
+  morning_off_scene: !input morning_off_scene
 
   phone2_charger_type: !input phone2_charger_type
+
+  is_morning_day: >
+    {% set today = now().strftime('%A') | lower %}
+    {% if weekday_mode == 'everyday' %}
+      true
+    {% elif weekday_mode == 'weekdays' %}
+      {{ today in ['monday','tuesday','wednesday','thursday','friday'] }}
+    {% else %}
+      {{ today in (weekdays_custom or []) }}
+    {% endif %}
 
 action:
   - choose:
@@ -242,34 +286,44 @@ action:
                   - service: light.turn_off
                     target: !input dim_lights
 
-      # ───────── MORNING SCHEDULE (MON–FRI DEFAULT) ─────────
+      # ───────── MORNING ON (Mon–Fri default) ─────────
       - conditions:
           - condition: trigger
             id: scheduled_on
           - condition: template
-            value_template: "{{ enable_morning_alarm }}"
-          - condition: template
-            value_template: >
-              {% set today = now().strftime('%A') | lower %}
-              {% if weekday_mode == 'everyday' %}
-                true
-              {% elif weekday_mode == 'weekdays' %}
-                {{ today in ['monday','tuesday','wednesday','thursday','friday'] }}
-              {% else %}
-                {{ today in (weekdays_custom or []) }}
-              {% endif %}
+            value_template: "{{ enable_morning_alarm and is_morning_day }}"
 
         sequence:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ enable_morning_scene and morning_scene != '' }}"
+                    value_template: "{{ enable_morning_on_scene and morning_on_scene != '' }}"
                 sequence:
                   - service: scene.turn_on
                     target:
-                      entity_id: !input morning_scene
+                      entity_id: !input morning_on_scene
             default:
               - service: light.turn_on
                 target: !input on_lights
                 data:
                   brightness_pct: !input on_brightness
+
+      # ───────── MORNING OFF (Mon–Fri default) ─────────
+      - conditions:
+          - condition: trigger
+            id: scheduled_off
+          - condition: template
+            value_template: "{{ enable_morning_alarm and is_morning_day }}"
+
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ enable_morning_off_scene and morning_off_scene != '' }}"
+                sequence:
+                  - service: scene.turn_on
+                    target:
+                      entity_id: !input morning_off_scene
+            default:
+              - service: light.turn_off
+                target: !input off_lights
