@@ -1,0 +1,151 @@
+blueprint:
+  name: IKEA 706.041.72 Wheel Remote (Zigbee2MQTT)
+  description: Robust control for IKEA wheel remote (supports multiple action types)
+  domain: automation
+
+  input:
+    mqtt_topic:
+      name: MQTT topic
+      description: e.g. zigbee2mqtt/wheel1/action
+      selector:
+        text:
+
+    target_light:
+      name: Target Light
+      selector:
+        entity:
+          domain: light
+
+    dimming_helper:
+      name: Dimming Helper
+      selector:
+        entity:
+          domain: input_boolean
+
+    step_size:
+      name: Step size (%)
+      default: 10
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+
+    smooth_step:
+      name: Smooth dim step (%)
+      default: 3
+      selector:
+        number:
+          min: 1
+          max: 20
+          step: 1
+
+mode: restart
+
+trigger:
+  - trigger: mqtt
+    topic: !input mqtt_topic
+
+variables:
+  action: "{{ trigger.payload }}"
+  light: !input target_light
+  helper: !input dimming_helper
+  step: !input step_size
+  smooth: !input smooth_step
+
+action:
+  - choose:
+
+      # -----------------------
+      # TOGGLE (click variants)
+      # -----------------------
+      - conditions: >
+          {{ action in ['toggle', 'on', 'off'] }}
+        sequence:
+          - action: light.toggle
+            target:
+              entity_id: "{{ light }}"
+
+      # -----------------------
+      # ROTATE RIGHT (all variants)
+      # -----------------------
+      - conditions: >
+          {{ action in ['rotate_right', 'step_with_on_off', 'brightness_step_up'] }}
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: "{{ light }}"
+            data:
+              brightness_step_pct: "{{ step }}"
+              transition: 0.2
+
+      # -----------------------
+      # ROTATE LEFT (all variants)
+      # -----------------------
+      - conditions: >
+          {{ action in ['rotate_left', 'brightness_step_down'] }}
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: "{{ light }}"
+            data:
+              brightness_step_pct: "{{ -step }}"
+              transition: 0.2
+
+      # -----------------------
+      # HOLD UP (continuous)
+      # -----------------------
+      - conditions: >
+          {{ action in ['brightness_move_up', 'move_with_on_off'] }}
+        sequence:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: "{{ helper }}"
+
+          - repeat:
+              while:
+                - condition: state
+                  entity_id: "{{ helper }}"
+                  state: "on"
+              sequence:
+                - action: light.turn_on
+                  target:
+                    entity_id: "{{ light }}"
+                  data:
+                    brightness_step_pct: "{{ smooth }}"
+                    transition: 0.1
+                - delay: 0.1
+
+      # -----------------------
+      # HOLD DOWN
+      # -----------------------
+      - conditions: >
+          {{ action in ['brightness_move_down', 'move'] }}
+        sequence:
+          - action: input_boolean.turn_on
+            target:
+              entity_id: "{{ helper }}"
+
+          - repeat:
+              while:
+                - condition: state
+                  entity_id: "{{ helper }}"
+                  state: "on"
+              sequence:
+                - action: light.turn_on
+                  target:
+                    entity_id: "{{ light }}"
+                  data:
+                    brightness_step_pct: "{{ -smooth }}"
+                    transition: 0.1
+                - delay: 0.1
+
+      # -----------------------
+      # STOP (release)
+      # -----------------------
+      - conditions: >
+          {{ action in ['brightness_stop', 'stop'] }}
+        sequence:
+          - action: input_boolean.turn_off
+            target:
+              entity_id: "{{ helper }}"
