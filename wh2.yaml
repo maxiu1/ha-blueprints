@@ -1,0 +1,56 @@
+blueprint:
+  name: IKEA BILRESA Scroll Wheel (Direct brightness & G7)
+  description: Direct 0-255 mapping for speed and custom automation trigger for click.
+  domain: automation
+  input:
+    remote:
+      name: IKEA BILRESA Remote
+      selector:
+        device:
+          integration: zha
+    target_light:
+      name: Target Light
+      selector:
+        target:
+          entity:
+            domain: light
+    g7_automation:
+      name: G7 Automation
+      description: The automation to trigger when clicking.
+      selector:
+        entity:
+          domain: automation
+
+mode: restart
+
+trigger:
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: !input remote
+
+action:
+  - variables:
+      command: "{{ trigger.event.data.command }}"
+      level: "{{ trigger.event.data.params.level | default(none) }}"
+  
+  - choose:
+      # --- DIRECT BRIGHTNESS CONTROL ---
+      # This maps the 'level' from the wheel (1 or 239) directly to light brightness
+      - conditions:
+          - condition: template
+            value_template: "{{ command == 'move_to_level' and level is not none }}"
+        sequence:
+          - service: light.turn_on
+            target: !input target_light
+            data:
+              brightness: "{{ level }}"
+
+      # --- CLICK TRIGGER (G7) ---
+      - conditions:
+          - condition: template
+            value_template: "{{ command == 'off' or command == 'on' }}"
+        sequence:
+          - service: automation.trigger
+            target:
+              entity_id: !input g7_automation
