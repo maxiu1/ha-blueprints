@@ -1,33 +1,27 @@
 blueprint:
-  name: Z2M Wheel (On/Off/Rotation/Polish TTS)
-  description: Obsługuje obrót oraz stany kliknięcia on/off/toggle/single.
+  name: "Brilesa Wheel: Ground Up Foundation"
+  description: "Direct MQTT control for Lights, Switches, and Automations."
   domain: automation
   input:
     topic_name:
-      name: Z2M Topic
-      description: Temat z Z2M (np. zigbee2mqtt/Wheel1).
+      name: MQTT Topic
+      description: The topic from Z2M (e.g., zigbee2mqtt/Wheel1).
       default: zigbee2mqtt/Wheel1
-    light_target:
-      name: Light (Optional)
-      default: {}
+    target_entities:
+      name: Lights & Switches
+      description: Select the devices you want to control.
       selector:
         target:
           entity:
-            domain: light
-    media_player:
-      name: Media Player (Optional)
-      default: {}
-      selector:
-        target:
-          entity:
-            domain: media_player
-    temp_sensor:
-      name: Temperature Sensor (Optional)
-      default: 
+            - domain: light
+            - domain: switch
+    automation_to_trigger:
+      name: Automation (Optional)
+      description: Trigger this automation when clicking 'On'.
+      default: []
       selector:
         entity:
-          domain: sensor
-          device_class: temperature
+          domain: automation
 
 mode: restart
 
@@ -40,52 +34,45 @@ action:
       payload: "{{ trigger.payload_json }}"
       action_state: "{{ payload.action }}"
       lvl: "{{ payload.action_level | float(0) }}"
-      vol: "{{ (lvl / 255) | round(2) }}"
 
   - choose:
-      # OBRÓT: Jasność i Głośność
+      # 1. ROTATION: Sync 0-255 to Brightness
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'brightness_move_to_level' }}"
         sequence:
           - service: light.turn_on
-            target: !input light_target
+            target: !input target_entities
             data:
               brightness: "{{ lvl }}"
-          - service: media_player.volume_set
-            target: !input media_player
-            data:
-              volume_level: "{{ vol }}"
 
-      # KLIKNIĘCIE: Włączanie (On / Single)
+      # 2. CLICK 'ON': Turn On Lights OR Trigger Automation
       - conditions:
           - condition: template
-            value_template: "{{ action_state in ['on', 'single', 'toggle'] }}"
+            value_template: "{{ action_state == 'on' }}"
         sequence:
-          - service: light.turn_on
-            target: !input light_target
-          - service: media_player.media_play
-            target: !input media_player
+          - service: homeassistant.turn_on
+            target: !input target_entities
+          - if:
+              - condition: template
+                value_template: "{{ automation_to_trigger != [] }}"
+            then:
+              - service: automation.trigger
+                target:
+                  entity_id: !input automation_to_trigger
 
-      # KLIKNIĘCIE: Wyłączanie (Off)
+      # 3. CLICK 'OFF': Kill everything
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'off' }}"
         sequence:
-          - service: light.turn_off
-            target: !input light_target
-          - service: media_player.media_pause
-            target: !input media_player
+          - service: homeassistant.turn_off
+            target: !input target_entities
 
-      # DWUKLIK: Temperatura po polsku
+      # 4. SINGLE CLICK (TOGGLE): Simple Flip
       - conditions:
           - condition: template
-            value_template: "{{ action_state == 'double' }}"
+            value_template: "{{ action_state in ['single', 'toggle'] }}"
         sequence:
-          - condition: template
-            value_template: "{{ temp_sensor != none }}"
-          - service: tts.google_translate_say
-            target: !input media_player
-            data:
-              language: "pl"
-              message: "Temperatura wynosi {{ states(temp_sensor) | replace('.', ',') }} stopni."
+          - service: homeassistant.toggle
+            target: !input target_entities
