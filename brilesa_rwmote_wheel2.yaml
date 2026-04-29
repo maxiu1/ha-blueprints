@@ -1,15 +1,14 @@
 blueprint:
-  name: "Brilesa Wheel: Device-Based (Scenes & Double-Tap)"
-  description: "1-Click=Toggle, 2-Clicks=Secondary+Scene Jump, Wheel=Brightness."
+  name: "Brilesa Wheel: Sharable Foundation"
+  description: "Universal Z2M Wheel. Works with any device name."
   domain: automation
   input:
     wheel_device:
       name: Wheel Device
-      description: Wybierz swoje kółko Zigbee2MQTT.
+      description: Select your Zigbee2MQTT wheel (any name).
       selector:
         device:
           integration: mqtt
-          manufacturer: "TuYa" # Helps filter the list
     main_lights:
       name: Main Lights (Wheel & 1-Click)
       selector:
@@ -17,7 +16,7 @@ blueprint:
           entity:
             domain: light
     secondary_target:
-      name: Secondary Switch/Light (2-Clicks)
+      name: Secondary Device (Double-Click)
       default: {}
       selector:
         target:
@@ -25,13 +24,13 @@ blueprint:
             - domain: light
             - domain: switch
     scene_1:
-      name: Scene 1
+      name: Scene A
       default: 
       selector:
         entity:
           domain: scene
     scene_2:
-      name: Scene 2 (Optional)
+      name: Scene B (Optional)
       default: 
       selector:
         entity:
@@ -40,7 +39,7 @@ blueprint:
 mode: restart
 
 trigger:
-  # Trigger on ANY action from the selected device
+  # Using the 'action' type on the device level is the universal way
   - platform: device
     domain: mqtt
     device_id: !input wheel_device
@@ -48,13 +47,13 @@ trigger:
 
 action:
   - variables:
-      # Extracting values from the device trigger payload
+      # This pulls the action name regardless of what the device is named
       action_state: "{{ trigger.payload }}"
-      # Device triggers pass the full JSON in 'payload_json'
+      # This pulls the level (0-255) from the JSON payload
       lvl: "{{ trigger.payload_json.action_level | float(0) }}"
 
   - choose:
-      # 1. WHEEL SCROLL: Brightness (0-255)
+      # 1. ROTATION (0-255)
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'brightness_move_to_level' }}"
@@ -64,7 +63,7 @@ action:
             data:
               brightness: "{{ lvl }}"
 
-      # 2. SINGLE CLICK: Toggle Main
+      # 2. SINGLE CLICK (Toggle Main)
       - conditions:
           - condition: template
             value_template: "{{ action_state in ['on', 'single', 'toggle'] }}"
@@ -72,29 +71,27 @@ action:
           - service: homeassistant.toggle
             target: !input main_lights
 
-      # 3. DOUBLE CLICK: Toggle Secondary + Jump Scenes
+      # 3. DOUBLE CLICK (Toggle Secondary + Jump Scenes)
       - conditions:
           - condition: template
             value_template: "{{ action_state in ['double', 'on_on'] }}"
         sequence:
           - service: homeassistant.toggle
             target: !input secondary_target
-          - choose:
-              # If Scene 1 is provided, activate it or jump to Scene 2
-              - conditions:
-                  - condition: template
-                    value_template: "{{ scene_1 != none }}"
-                sequence:
-                  - service: scene.turn_on
-                    target:
-                      entity_id: >
-                        {% if scene_2 != none and is_state(scene_1, 'on') %}
-                          {{ scene_2 }}
-                        {% else %}
-                          {{ scene_1 }}
-                        {% endif %}
+          - if:
+              - condition: template
+                value_template: "{{ scene_1 != none }}"
+            then:
+              - service: scene.turn_on
+                target:
+                  entity_id: >
+                    {% if scene_2 != none and is_state(scene_1, 'on') %}
+                      {{ scene_2 }}
+                    {% else %}
+                      {{ scene_1 }}
+                    {% endif %}
 
-      # 4. CLICK OFF: Master Kill
+      # 4. CLICK OFF
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'off' }}"
