@@ -1,14 +1,12 @@
 blueprint:
-  name: Z2M Polish Wheel Final
-  description: Syncs Wheel1 rotation and speaks temperature in Polish.
+  name: Z2M Direct MQTT Wheel (Polish TTS)
+  description: Direct MQTT version - bypasses missing HA sensors.
   domain: automation
   input:
-    remote_sensor:
-      name: Wheel Action Sensor
-      description: Look for sensor.wheel1_action (now visible thanks to legacy settings).
-      selector:
-        entity:
-          domain: sensor
+    wheel_name:
+      name: Zigbee2MQTT Friendly Name
+      description: The name of your wheel in Z2M (e.g., Wheel1).
+      default: Wheel1
     light_target:
       name: Light (Optional)
       default: {}
@@ -34,16 +32,19 @@ blueprint:
 mode: restart
 
 trigger:
-  - platform: state
-    entity_id: !input remote_sensor
+  - platform: mqtt
+    # This listens to the raw data from Zigbee2MQTT
+    topic: "zigbee2mqtt/{{ wheel_name }}"
 
 action:
   - variables:
-      # Extract level from attributes
-      lvl: "{{ state_attr(trigger.entity_id, 'action_level') | float(0) }}"
-      # Convert 0-255 to 0.0-1.0
+      # Parse the JSON payload coming from MQTT
+      payload: "{{ trigger.payload_json }}"
+      action_state: "{{ payload.action }}"
+      # Extract level (0-255)
+      lvl: "{{ payload.action_level | float(0) }}"
+      # Convert for Volume (0.0-1.0)
       vol: "{{ (lvl / 255) | round(2) }}"
-      action_state: "{{ trigger.to_state.state }}"
 
   - choose:
       # ROTATION
@@ -70,7 +71,7 @@ action:
           - service: media_player.media_play_pause
             target: !input media_player
 
-      # DOUBLE CLICK
+      # DOUBLE CLICK (Polish TTS)
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'double' }}"
