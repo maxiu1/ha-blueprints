@@ -1,14 +1,12 @@
 blueprint:
-  name: Z2M Wheel (MQTT Device Picker)
-  description: Professional rotation sync using the Device Picker for MQTT.
+  name: Z2M Wheel (Bulletproof Template)
+  description: Uses raw MQTT topic to avoid 'subtype' errors.
   domain: automation
   input:
-    wheel_device:
-      name: Wheel Device
-      description: Select your Zigbee2MQTT Wheel device.
-      selector:
-        device:
-          integration: mqtt
+    topic_name:
+      name: Z2M Topic
+      description: The topic from Z2M (usually zigbee2mqtt/Wheel1).
+      default: zigbee2mqtt/Wheel1
     light_target:
       name: Light (Optional)
       default: {}
@@ -33,24 +31,20 @@ blueprint:
 
 mode: restart
 
-# This dynamic trigger listens to any MQTT message from the selected device
 trigger:
-  - platform: device
-    domain: mqtt
-    device_id: !input wheel_device
-    type: action # This catches the 'action' sub-event from Z2M
+  - platform: mqtt
+    topic: !input topic_name
 
 action:
   - variables:
-      # Extracting data from the trigger payload
-      action_state: "{{ trigger.payload }}"
-      # In some Z2M setups, level comes in a different field. 
-      # We check 'action_level' first, then 'brightness' as a backup.
-      lvl: "{{ trigger.payload_json.action_level | default(trigger.payload_json.brightness) | float(0) }}"
+      # Parse the JSON coming directly from the MQTT wire
+      payload: "{{ trigger.payload_json }}"
+      action_state: "{{ payload.action }}"
+      lvl: "{{ payload.action_level | float(0) }}"
       vol: "{{ (lvl / 255) | round(2) }}"
 
   - choose:
-      # ROTATION: Sync level to Light/Media
+      # ROTATION
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'brightness_move_to_level' }}"
@@ -64,7 +58,7 @@ action:
             data:
               volume_level: "{{ vol }}"
 
-      # SINGLE CLICK: Toggle
+      # SINGLE CLICK
       - conditions:
           - condition: template
             value_template: "{{ action_state in ['toggle', 'single', 'on'] }}"
@@ -74,7 +68,7 @@ action:
           - service: media_player.media_play_pause
             target: !input media_player
 
-      # DOUBLE CLICK: Polish TTS
+      # DOUBLE CLICK (Polish TTS)
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'double' }}"
