@@ -1,24 +1,38 @@
 blueprint:
-  name: "Brilesa Wheel: Ground Up Foundation"
-  description: "Direct MQTT control for Lights, Switches, and Automations."
+  name: "Brilesa Wheel: Multi-Scene Foundation"
+  description: "Rotation (Brightness), On (Multiple Scenes/Auto), Off, and Toggle."
   domain: automation
   input:
     topic_name:
       name: MQTT Topic
-      description: The topic from Z2M (e.g., zigbee2mqtt/Wheel1).
+      description: Temat z Z2M (np. zigbee2mqtt/Wheel1).
       default: zigbee2mqtt/Wheel1
     target_entities:
       name: Lights & Switches
-      description: Select the devices you want to control.
+      description: Główne urządzenia sterowane obrotem i przyciskiem.
       selector:
         target:
           entity:
             - domain: light
             - domain: switch
+    scene_primary:
+      name: Primary Scene (Optional)
+      description: Pierwsza scena aktywowana po kliknięciu 'On'.
+      default: 
+      selector:
+        entity:
+          domain: scene
+    scene_additional:
+      name: Additional Scene (Optional)
+      description: Dodatkowa scena aktywowana po kliknięciu 'On'.
+      default: 
+      selector:
+        entity:
+          domain: scene
     automation_to_trigger:
       name: Automation (Optional)
-      description: Trigger this automation when clicking 'On'.
-      default: []
+      description: Automatyzacja uruchamiana po kliknięciu 'On'.
+      default: 
       selector:
         entity:
           domain: automation
@@ -46,16 +60,37 @@ action:
             data:
               brightness: "{{ lvl }}"
 
-      # 2. CLICK 'ON': Turn On Lights OR Trigger Automation
+      # 2. CLICK 'ON': Lights + Both Scenes + Automation
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'on' }}"
         sequence:
+          # Turn on main entities
           - service: homeassistant.turn_on
             target: !input target_entities
+          
+          # Activate Primary Scene
           - if:
               - condition: template
-                value_template: "{{ automation_to_trigger != [] }}"
+                value_template: "{{ scene_primary != none }}"
+            then:
+              - service: scene.turn_on
+                target:
+                  entity_id: !input scene_primary
+          
+          # Activate Additional Scene (The new picker)
+          - if:
+              - condition: template
+                value_template: "{{ scene_additional != none }}"
+            then:
+              - service: scene.turn_on
+                target:
+                  entity_id: !input scene_additional
+          
+          # Trigger Automation
+          - if:
+              - condition: template
+                value_template: "{{ automation_to_trigger != none }}"
             then:
               - service: automation.trigger
                 target:
@@ -69,7 +104,7 @@ action:
           - service: homeassistant.turn_off
             target: !input target_entities
 
-      # 4. SINGLE CLICK (TOGGLE): Simple Flip
+      # 4. SINGLE CLICK / TOGGLE
       - conditions:
           - condition: template
             value_template: "{{ action_state in ['single', 'toggle'] }}"
