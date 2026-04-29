@@ -1,11 +1,11 @@
 blueprint:
-  name: Z2M Universal Wheel Controller
-  description: Optimized for Zigbee2MQTT rotary encoders (IKEA, Tuya, etc.)
+  name: Z2M Level-Sync Wheel (Polish TTS)
+  description: Syncs wheel rotation level (0-255) and speaks temperature in Polish.
   domain: automation
   input:
     remote_sensor:
-      name: Remote Action Sensor
-      description: The "action" entity from Zigbee2MQTT (e.g., sensor.my_wheel_action)
+      name: Wheel Action Sensor
+      description: The _action sensor from Z2M (e.g., sensor.wheel1_action).
       selector:
         entity:
           domain: sensor
@@ -16,7 +16,7 @@ blueprint:
         target:
           entity:
             domain: light
-    media_target:
+    media_player:
       name: Media Player (Optional)
       default: {}
       selector:
@@ -32,7 +32,6 @@ blueprint:
           device_class: temperature
 
 mode: restart
-max_exceeded: silent
 
 trigger:
   - platform: state
@@ -40,56 +39,47 @@ trigger:
 
 action:
   - variables:
-      # Capture the action string from Z2M
-      action: "{{ trigger.to_state.state }}"
+      # Extract level from attributes (0-255)
+      lvl: "{{ state_attr(trigger.entity_id, 'action_level') | float(0) }}"
+      # Convert for Media Player (0.0-1.0)
+      vol: "{{ (lvl / 255) | round(2) }}"
+      action_state: "{{ trigger.to_state.state }}"
 
   - choose:
-      # ROTATE RIGHT
+      # ROTATION: Sync brightness and volume
       - conditions:
           - condition: template
-            value_template: "{{ action in ['rotate_right', 'brightness_move_up', 'volume_up'] }}"
+            value_template: "{{ action_state == 'brightness_move_to_level' }}"
         sequence:
           - service: light.turn_on
             target: !input light_target
             data:
-              brightness_step_pct: 10
+              brightness: "{{ lvl }}"
           - service: media_player.volume_set
-            target: !input media_target
+            target: !input media_player
             data:
-              volume_level: "{{ (state_attr(trigger.to_state.entity_id, 'volume_level') | float(0.5)) + 0.05 }}"
+              volume_level: "{{ vol }}"
 
-      # ROTATE LEFT
+      # SINGLE CLICK: Toggle
       - conditions:
           - condition: template
-            value_template: "{{ action in ['rotate_left', 'brightness_move_down', 'volume_down'] }}"
-        sequence:
-          - service: light.turn_on
-            target: !input light_target
-            data:
-              brightness_step_pct: -10
-          - service: media_player.volume_set
-            target: !input media_target
-            data:
-              volume_level: "{{ (state_attr(trigger.to_state.entity_id, 'volume_level') | float(0.5)) - 0.05 }}"
-
-      # SINGLE CLICK
-      - conditions:
-          - condition: template
-            value_template: "{{ action in ['toggle', 'on', 'off', 'single'] }}"
+            value_template: "{{ action_state in ['toggle', 'single', 'on'] }}"
         sequence:
           - service: homeassistant.toggle
             target: !input light_target
           - service: media_player.media_play_pause
-            target: !input media_target
+            target: !input media_player
 
-      # DOUBLE CLICK (TTS Temperature)
+      # DOUBLE CLICK: TTS Polish Temperature
       - conditions:
           - condition: template
-            value_template: "{{ action in ['double', 'brightness_stop'] }}" # Some wheels use 'stop' as a second action
+            value_template: "{{ action_state == 'double' }}"
         sequence:
           - condition: template
             value_template: "{{ temp_sensor != none }}"
-          - service: tts.google_say
-            target: !input media_target
+          - service: tts.google_translate_say
+            target: !input media_player
             data:
-              message: "The current temperature is {{ states(temp_sensor) }} degrees."
+              language: "pl"
+              message: "Aktualna temperatura to {{ states(temp_sensor) | replace('.', ',') }} stopni."
+
