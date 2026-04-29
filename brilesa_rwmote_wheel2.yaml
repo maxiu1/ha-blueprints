@@ -1,11 +1,11 @@
 blueprint:
-  name: "Brilesa Wheel: Sharable Foundation"
-  description: "Universal Z2M Wheel. Works with any device name."
+  name: "Brilesa Wheel: Sharable (Fixed Subtype Error)"
+  description: "Universal Z2M Wheel using Device Picker -> MQTT Topic conversion."
   domain: automation
   input:
     wheel_device:
       name: Wheel Device
-      description: Select your Zigbee2MQTT wheel (any name).
+      description: Select your Zigbee2MQTT wheel.
       selector:
         device:
           integration: mqtt
@@ -38,19 +38,25 @@ blueprint:
 
 mode: restart
 
+# We use the base MQTT topic of the device to avoid the 'subtype' error
 trigger:
-  # Using the 'action' type on the device level is the universal way
-  - platform: device
-    domain: mqtt
-    device_id: !input wheel_device
-    type: action
+  - platform: mqtt
+    topic: "zigbee2mqtt/+" # This listens to all Z2M, filtered by logic below
+
+condition:
+  # This ensures the message is actually from the device you picked in the UI
+  - condition: template
+    value_template: >
+      {% set device_id = states.sensor | selectattr('device_id', 'eq', wheel_device) | map(attribute='entity_id') | first %}
+      {% set base_topic = device_id | replace('sensor.', 'zigbee2mqtt/') | replace('_action', '') %}
+      {{ trigger.topic == base_topic }}
+    # Note: If your Z2M base topic is different (e.g. 'z2m/'), change it above.
 
 action:
   - variables:
-      # This pulls the action name regardless of what the device is named
-      action_state: "{{ trigger.payload }}"
-      # This pulls the level (0-255) from the JSON payload
-      lvl: "{{ trigger.payload_json.action_level | float(0) }}"
+      payload: "{{ trigger.payload_json }}"
+      action_state: "{{ payload.action }}"
+      lvl: "{{ payload.action_level | float(0) }}"
 
   - choose:
       # 1. ROTATION (0-255)
