@@ -1,14 +1,15 @@
 blueprint:
-  name: "Brilesa Wheel: Sharable (Fixed Subtype Error)"
-  description: "Universal Z2M Wheel using Device Picker -> MQTT Topic conversion."
+  name: "Brilesa Wheel: Universal Entity Edition"
+  description: "Wybierz sensor 'action' swojego kółka. 1-klik=Główne, 2-kliki=Sceny, Obrót=Jasność."
   domain: automation
   input:
-    wheel_device:
-      name: Wheel Device
-      description: Select your Zigbee2MQTT wheel.
+    action_sensor:
+      name: Wheel Action Sensor
+      description: Wybierz sensor akcji (np. sensor.wheel1_action).
       selector:
-        device:
+        entity:
           integration: mqtt
+          domain: sensor
     main_lights:
       name: Main Lights (Wheel & 1-Click)
       selector:
@@ -38,28 +39,20 @@ blueprint:
 
 mode: restart
 
-# We use the base MQTT topic of the device to avoid the 'subtype' error
 trigger:
-  - platform: mqtt
-    topic: "zigbee2mqtt/+" # This listens to all Z2M, filtered by logic below
-
-condition:
-  # This ensures the message is actually from the device you picked in the UI
-  - condition: template
-    value_template: >
-      {% set device_id = states.sensor | selectattr('device_id', 'eq', wheel_device) | map(attribute='entity_id') | first %}
-      {% set base_topic = device_id | replace('sensor.', 'zigbee2mqtt/') | replace('_action', '') %}
-      {{ trigger.topic == base_topic }}
-    # Note: If your Z2M base topic is different (e.g. 'z2m/'), change it above.
+  # Wyzwalamy na podstawie zmiany stanu sensora MQTT
+  - platform: state
+    entity_id: !input action_sensor
 
 action:
   - variables:
-      payload: "{{ trigger.payload_json }}"
-      action_state: "{{ payload.action }}"
-      lvl: "{{ payload.action_level | float(0) }}"
+      # Pobieramy akcję (on, off, double, itp.)
+      action_state: "{{ trigger.to_state.state }}"
+      # Pobieramy poziom jasności z atrybutów sensora
+      lvl: "{{ state_attr(trigger.entity_id, 'action_level') | float(0) }}"
 
   - choose:
-      # 1. ROTATION (0-255)
+      # 1. OBRÓT: Jasność 0-255
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'brightness_move_to_level' }}"
@@ -69,7 +62,7 @@ action:
             data:
               brightness: "{{ lvl }}"
 
-      # 2. SINGLE CLICK (Toggle Main)
+      # 2. POJEDYNCZE KLIKNIĘCIE: Toggle Główne
       - conditions:
           - condition: template
             value_template: "{{ action_state in ['on', 'single', 'toggle'] }}"
@@ -77,7 +70,7 @@ action:
           - service: homeassistant.toggle
             target: !input main_lights
 
-      # 3. DOUBLE CLICK (Toggle Secondary + Jump Scenes)
+      # 3. PODWÓJNE KLIKNIĘCIE: Toggle Secondary + Skok między scenami
       - conditions:
           - condition: template
             value_template: "{{ action_state in ['double', 'on_on'] }}"
@@ -97,7 +90,7 @@ action:
                       {{ scene_1 }}
                     {% endif %}
 
-      # 4. CLICK OFF
+      # 4. PRZYCISK OFF
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'off' }}"
