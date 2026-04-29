@@ -1,11 +1,11 @@
 blueprint:
-  name: Z2M Wheel (Bulletproof Template)
-  description: Uses raw MQTT topic to avoid 'subtype' errors.
+  name: Z2M Wheel (On/Off/Rotation/Polish TTS)
+  description: Obsługuje obrót oraz stany kliknięcia on/off/toggle/single.
   domain: automation
   input:
     topic_name:
       name: Z2M Topic
-      description: The topic from Z2M (usually zigbee2mqtt/Wheel1).
+      description: Temat z Z2M (np. zigbee2mqtt/Wheel1).
       default: zigbee2mqtt/Wheel1
     light_target:
       name: Light (Optional)
@@ -37,14 +37,13 @@ trigger:
 
 action:
   - variables:
-      # Parse the JSON coming directly from the MQTT wire
       payload: "{{ trigger.payload_json }}"
       action_state: "{{ payload.action }}"
       lvl: "{{ payload.action_level | float(0) }}"
       vol: "{{ (lvl / 255) | round(2) }}"
 
   - choose:
-      # ROTATION
+      # OBRÓT: Jasność i Głośność
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'brightness_move_to_level' }}"
@@ -58,17 +57,27 @@ action:
             data:
               volume_level: "{{ vol }}"
 
-      # SINGLE CLICK
+      # KLIKNIĘCIE: Włączanie (On / Single)
       - conditions:
           - condition: template
-            value_template: "{{ action_state in ['toggle', 'single', 'on'] }}"
+            value_template: "{{ action_state in ['on', 'single', 'toggle'] }}"
         sequence:
-          - service: homeassistant.toggle
+          - service: light.turn_on
             target: !input light_target
-          - service: media_player.media_play_pause
+          - service: media_player.media_play
             target: !input media_player
 
-      # DOUBLE CLICK (Polish TTS)
+      # KLIKNIĘCIE: Wyłączanie (Off)
+      - conditions:
+          - condition: template
+            value_template: "{{ action_state == 'off' }}"
+        sequence:
+          - service: light.turn_off
+            target: !input light_target
+          - service: media_player.media_pause
+            target: !input media_player
+
+      # DWUKLIK: Temperatura po polsku
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'double' }}"
