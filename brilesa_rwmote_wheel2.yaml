@@ -1,113 +1,105 @@
 blueprint:
-  name: "Brilesa Wheel: Multi-Scene Foundation"
-  description: "Rotation (Brightness), On (Multiple Scenes/Auto), Off, and Toggle."
+  name: "Brilesa Wheel: Device-Based (Scenes & Double-Tap)"
+  description: "1-Click=Toggle, 2-Clicks=Secondary+Scene Jump, Wheel=Brightness."
   domain: automation
   input:
-    topic_name:
-      name: MQTT Topic
-      description: Temat z Z2M (np. zigbee2mqtt/Wheel1).
-      default: zigbee2mqtt/Wheel1
-    target_entities:
-      name: Lights & Switches
-      description: Główne urządzenia sterowane obrotem i przyciskiem.
+    wheel_device:
+      name: Wheel Device
+      description: Wybierz swoje kółko Zigbee2MQTT.
+      selector:
+        device:
+          integration: mqtt
+          manufacturer: "TuYa" # Helps filter the list
+    main_lights:
+      name: Main Lights (Wheel & 1-Click)
+      selector:
+        target:
+          entity:
+            domain: light
+    secondary_target:
+      name: Secondary Switch/Light (2-Clicks)
+      default: {}
       selector:
         target:
           entity:
             - domain: light
             - domain: switch
-    scene_primary:
-      name: Primary Scene (Optional)
-      description: Pierwsza scena aktywowana po kliknięciu 'On'.
+    scene_1:
+      name: Scene 1
       default: 
       selector:
         entity:
           domain: scene
-    scene_additional:
-      name: Additional Scene (Optional)
-      description: Dodatkowa scena aktywowana po kliknięciu 'On'.
+    scene_2:
+      name: Scene 2 (Optional)
       default: 
       selector:
         entity:
           domain: scene
-    automation_to_trigger:
-      name: Automation (Optional)
-      description: Automatyzacja uruchamiana po kliknięciu 'On'.
-      default: 
-      selector:
-        entity:
-          domain: automation
 
 mode: restart
 
 trigger:
-  - platform: mqtt
-    topic: !input topic_name
+  # Trigger on ANY action from the selected device
+  - platform: device
+    domain: mqtt
+    device_id: !input wheel_device
+    type: action
 
 action:
   - variables:
-      payload: "{{ trigger.payload_json }}"
-      action_state: "{{ payload.action }}"
-      lvl: "{{ payload.action_level | float(0) }}"
+      # Extracting values from the device trigger payload
+      action_state: "{{ trigger.payload }}"
+      # Device triggers pass the full JSON in 'payload_json'
+      lvl: "{{ trigger.payload_json.action_level | float(0) }}"
 
   - choose:
-      # 1. ROTATION: Sync 0-255 to Brightness
+      # 1. WHEEL SCROLL: Brightness (0-255)
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'brightness_move_to_level' }}"
         sequence:
           - service: light.turn_on
-            target: !input target_entities
+            target: !input main_lights
             data:
               brightness: "{{ lvl }}"
 
-      # 2. CLICK 'ON': Lights + Both Scenes + Automation
+      # 2. SINGLE CLICK: Toggle Main
       - conditions:
           - condition: template
-            value_template: "{{ action_state == 'on' }}"
+            value_template: "{{ action_state in ['on', 'single', 'toggle'] }}"
         sequence:
-          # Turn on main entities
-          - service: homeassistant.turn_on
-            target: !input target_entities
-          
-          # Activate Primary Scene
-          - if:
-              - condition: template
-                value_template: "{{ scene_primary != none }}"
-            then:
-              - service: scene.turn_on
-                target:
-                  entity_id: !input scene_primary
-          
-          # Activate Additional Scene (The new picker)
-          - if:
-              - condition: template
-                value_template: "{{ scene_additional != none }}"
-            then:
-              - service: scene.turn_on
-                target:
-                  entity_id: !input scene_additional
-          
-          # Trigger Automation
-          - if:
-              - condition: template
-                value_template: "{{ automation_to_trigger != none }}"
-            then:
-              - service: automation.trigger
-                target:
-                  entity_id: !input automation_to_trigger
+          - service: homeassistant.toggle
+            target: !input main_lights
 
-      # 3. CLICK 'OFF': Kill everything
+      # 3. DOUBLE CLICK: Toggle Secondary + Jump Scenes
+      - conditions:
+          - condition: template
+            value_template: "{{ action_state in ['double', 'on_on'] }}"
+        sequence:
+          - service: homeassistant.toggle
+            target: !input secondary_target
+          - choose:
+              # If Scene 1 is provided, activate it or jump to Scene 2
+              - conditions:
+                  - condition: template
+                    value_template: "{{ scene_1 != none }}"
+                sequence:
+                  - service: scene.turn_on
+                    target:
+                      entity_id: >
+                        {% if scene_2 != none and is_state(scene_1, 'on') %}
+                          {{ scene_2 }}
+                        {% else %}
+                          {{ scene_1 }}
+                        {% endif %}
+
+      # 4. CLICK OFF: Master Kill
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'off' }}"
         sequence:
           - service: homeassistant.turn_off
-            target: !input target_entities
-
-      # 4. SINGLE CLICK / TOGGLE
-      - conditions:
-          - condition: template
-            value_template: "{{ action_state in ['single', 'toggle'] }}"
-        sequence:
-          - service: homeassistant.toggle
-            target: !input target_entities
+            target: !input main_lights
+          - service: homeassistant.turn_off
+            target: !input secondary_target
