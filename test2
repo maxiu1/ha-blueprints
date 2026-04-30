@@ -1,0 +1,72 @@
+blueprint:
+  name: "Brilesa Wheel: Ground Up (Sharable)"
+  description: "1-Click=All On/Off, Double-Click=Individual Toggle, Wheel=0-255 Dimming."
+  domain: automation
+  input:
+    action_sensor:
+      name: Wheel Action Sensor
+      description: Pick the 'action' sensor (e.g., sensor.wheel1_action).
+      selector:
+        entity:
+          integration: mqtt
+          domain: sensor
+    main_lights:
+      name: Main Lights (Group)
+      selector:
+        target:
+          entity:
+            domain: light
+    individual_light:
+      name: Individual Light (Double-Click)
+      selector:
+        target:
+          entity:
+            domain: light
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input action_sensor
+
+action:
+  - variables:
+      # This captures the action from the sensor state
+      action_state: "{{ trigger.to_state.state }}"
+      # This captures the 0-255 level from the sensor attributes
+      lvl: "{{ state_attr(trigger.entity_id, 'action_level') | float(0) }}"
+
+  - choose:
+      # 1. WHEEL SCROLL: 0-255 Brightness
+      - conditions:
+          - condition: template
+            value_template: "{{ action_state == 'brightness_move_to_level' }}"
+        sequence:
+          - service: light.turn_on
+            target: !input main_lights
+            data:
+              brightness: "{{ lvl }}"
+
+      # 2. SINGLE CLICK ON
+      - conditions:
+          - condition: template
+            value_template: "{{ action_state == 'on' }}"
+        sequence:
+          - service: light.turn_on
+            target: !input main_lights
+
+      # 3. SINGLE CLICK OFF
+      - conditions:
+          - condition: template
+            value_template: "{{ action_state == 'off' }}"
+        sequence:
+          - service: light.turn_off
+            target: !input main_lights
+
+      # 4. DOUBLE CLICK: Toggle the individual entity
+      - conditions:
+          - condition: template
+            value_template: "{{ action_state in ['double', 'on_on'] }}"
+        sequence:
+          - service: light.toggle
+            target: !input individual_light
