@@ -1,59 +1,41 @@
 blueprint:
-  name: "Brilesa Wheel: Entity Picker Edition"
-  description: "Pick Wheel1 or Wheel2 from a list. 1-Click=Main, 2-Click=Secondary+Scene, Wheel=Dim."
+  name: "Brilesa Wheel: Portable & Bug-Free"
+  description: "1-Click On/Off, Double-Click Individual, Wheel 0-255 Brightness."
   domain: automation
   input:
-    wheel_entity:
-      name: Select Wheel
-      description: Choose the 'action' sensor for your remote (e.g., sensor.wheel1_action).
-      selector:
-        entity:
-          domain: sensor
-          # This filters the list to only show sensors related to your Zigbee remotes
-          device_class: enum 
+    mqtt_topic:
+      name: MQTT Topic
+      description: The base topic of your wheel (e.g., zigbee2mqtt/Wheel1).
+      default: zigbee2mqtt/Wheel1
     main_lights:
-      name: Main Lights (Wheel & 1-Click)
+      name: Main Lights (Group)
+      description: These turn on/off with single clicks and react to the wheel.
       selector:
         target:
           entity:
             domain: light
-    secondary_target:
-      name: Secondary Device (2-Clicks)
-      default: {}
+    individual_light:
+      name: Individual Light (Double-Click)
+      description: This specific entity toggles when you double-click.
       selector:
         target:
           entity:
-            - domain: light
-            - domain: switch
-    scene_1:
-      name: Scene 1
-      default: 
-      selector:
-        entity:
-          domain: scene
-    scene_2:
-      name: Scene 2 (Optional)
-      default: 
-      selector:
-        entity:
-          domain: scene
+            domain: light
 
 mode: restart
 
 trigger:
-  # Triggers when the state of the picked sensor changes
-  - platform: state
-    entity_id: !input wheel_entity
+  - platform: mqtt
+    topic: !input mqtt_topic
 
 action:
   - variables:
-      # Capture the action name (on, off, double, etc.)
-      action_state: "{{ trigger.to_state.state }}"
-      # Capture the 0-255 value from the sensor attributes
-      lvl: "{{ state_attr(trigger.entity_id, 'action_level') | float(0) }}"
+      payload: "{{ trigger.payload_json }}"
+      action_state: "{{ payload.action }}"
+      lvl: "{{ payload.action_level | float(0) }}"
 
   - choose:
-      # 1. WHEEL SCROLL: 0-255 Brightness
+      # 1. WHEEL SCROLL: Absolute Brightness 0-255
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'brightness_move_to_level' }}"
@@ -63,40 +45,26 @@ action:
             data:
               brightness: "{{ lvl }}"
 
-      # 2. SINGLE CLICK: Toggle Main Lights
+      # 2. SINGLE CLICK ON: Turn all main lights on
       - conditions:
           - condition: template
-            value_template: "{{ action_state in ['on', 'single', 'toggle'] }}"
+            value_template: "{{ action_state == 'on' }}"
         sequence:
-          - service: homeassistant.toggle
+          - service: light.turn_on
             target: !input main_lights
 
-      # 3. DOUBLE CLICK: Toggle Secondary + Jump Scenes
-      - conditions:
-          - condition: template
-            value_template: "{{ action_state in ['double', 'on_on'] }}"
-        sequence:
-          - service: homeassistant.toggle
-            target: !input secondary_target
-          - if:
-              - condition: template
-                value_template: "{{ scene_1 != none }}"
-            then:
-              - service: scene.turn_on
-                target:
-                  entity_id: >
-                    {% if scene_2 != none and is_state(scene_1, 'on') %}
-                      {{ scene_2 }}
-                    {% else %}
-                      {{ scene_1 }}
-                    {% endif %}
-
-      # 4. CLICK OFF: Turn Off Main & Secondary
+      # 3. SINGLE CLICK OFF: Turn all main lights off
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'off' }}"
         sequence:
-          - service: homeassistant.turn_off
+          - service: light.turn_off
             target: !input main_lights
-          - service: homeassistant.turn_off
-            target: !input secondary_target
+
+      # 4. DOUBLE CLICK (on_on): Toggle the individual light
+      - conditions:
+          - condition: template
+            value_template: "{{ action_state in ['double', 'on_on'] }}"
+        sequence:
+          - service: light.toggle
+            target: !input individual_light
