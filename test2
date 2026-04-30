@@ -1,23 +1,23 @@
 blueprint:
-  name: "Brilesa Wheel: Ground Up (Sharable)"
-  description: "1-Click=All On/Off, Double-Click=Individual Toggle, Wheel=0-255 Dimming."
+  name: "Brilesa Wheel: Ultimate Final"
+  description: "1-Click=On/Off, Double-Click=Individual, Wheel=0-255."
   domain: automation
   input:
     action_sensor:
       name: Wheel Action Sensor
-      description: Pick the 'action' sensor (e.g., sensor.wheel1_action).
+      description: Wybierz sensor akcji (np. sensor.wheel1_action).
       selector:
         entity:
           integration: mqtt
           domain: sensor
     main_lights:
-      name: Main Lights (Group)
+      name: Główne Światła (Cała grupa)
       selector:
         target:
           entity:
             domain: light
     individual_light:
-      name: Individual Light (Double-Click)
+      name: Światło Indywidualne (2-klik)
       selector:
         target:
           entity:
@@ -31,13 +31,11 @@ trigger:
 
 action:
   - variables:
-      # This captures the action from the sensor state
       action_state: "{{ trigger.to_state.state }}"
-      # This captures the 0-255 level from the sensor attributes
       lvl: "{{ state_attr(trigger.entity_id, 'action_level') | float(0) }}"
 
   - choose:
-      # 1. WHEEL SCROLL: 0-255 Brightness
+      # 1. WHEEL SCROLL
       - conditions:
           - condition: template
             value_template: "{{ action_state == 'brightness_move_to_level' }}"
@@ -63,7 +61,7 @@ action:
           - service: light.turn_off
             target: !input main_lights
 
-      # 4. DOUBLE CLICK: Toggle the individual entity
+      # 4. DOUBLE CLICK (on_on)
       - conditions:
           - condition: template
             value_template: "{{ action_state in ['double', 'on_on'] }}"
