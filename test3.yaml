@@ -1,28 +1,21 @@
 blueprint:
-  name: "Brilsa Wheel - Naprawa Sterowania"
-  description: "Dedykowany dla Brilsa/AVATTO. Klik: Salon, Double: Krzak, Spin: Brightness"
+  name: "Brilsa Wheel - Naprawiony Maping"
+  description: "Działa zgodnie z mapowaniem: on/off (klik), on_double (double), brightness_move_to_level (spin)"
   domain: automation
   input:
-    remote_sensor:
+    remote_entity:
       name: Brilsa Action Sensor
-      description: "Wybierz sensor action (np. sensor.wheel1_action)"
       selector:
         entity:
           domain: sensor
-    level_sensor:
-      name: Brilsa Level Sensor
-      description: "Wybierz sensor action_level (np. sensor.wheel1_action_level)"
-      selector:
-        entity:
-          domain: sensor
-    light_salon:
-      name: Światło Salon
+    light_target:
+      name: Światła Salon
       selector:
         target:
           entity:
             domain: light
-    switch_krzak:
-      name: Switch Krzak
+    switch_target:
+      name: Krzak
       selector:
         target:
           entity:
@@ -31,36 +24,39 @@ blueprint:
 mode: restart
 
 trigger:
-  # Reagujemy na każdą zmianę, nawet na tę samą wartość
   - platform: state
-    entity_id: !input remote_sensor
-  - platform: state
-    entity_id: !input level_sensor
+    entity_id: !input remote_entity
 
 action:
+  - variables:
+      # Pobieramy stan akcji
+      action: "{{ trigger.to_state.state }}"
+      # Pobieramy poziom jasności z atrybutu (jeśli istnieje)
+      level: "{{ state_attr(trigger.entity_id, 'action_level') }}"
+
   - choose:
-      # POJEDYNCZE KLIKNIĘCIE (Brilsa często wysyła 'toggle' zamiast 'single')
+      # 1. KLIKNIĘCIE (Zgodnie z mapą: on lub off)
       - conditions:
           - condition: template
-            value_template: "{{ states(remote_sensor) in ['single', 'toggle'] }}"
+            value_template: "{{ action in ['on', 'off', 'toggle'] }}"
         sequence:
           - service: light.toggle
-            target: !input light_salon
+            target: !input light_target
 
-      # PODWÓJNE KLIKNIĘCIE
+      # 2. PODWÓJNE KLIKNIĘCIE (Zgodnie z mapą: on_double lub off_double)
       - conditions:
           - condition: template
-            value_template: "{{ states(remote_sensor) == 'double' }}"
+            value_template: "{{ action in ['on_double', 'off_double'] }}"
         sequence:
           - service: switch.toggle
-            target: !input switch_krzak
+            target: !input switch_target
 
-      # OBRÓT (Jasność 0-255)
+      # 3. OBRÓT KOŁEM (brightness_move_to_level)
       - conditions:
           - condition: template
-            value_template: "{{ trigger.entity_id == level_sensor and trigger.to_state.state not in ['unknown', 'unavailable', 'null'] }}"
+            value_template: "{{ action == 'brightness_move_to_level' }}"
         sequence:
           - service: light.turn_on
-            target: !input light_salon
+            target: !input light_target
             data:
-              brightness: "{{ trigger.to_state.state | int }}"
+              brightness: "{{ level | int }}"
