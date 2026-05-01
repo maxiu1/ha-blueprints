@@ -51,12 +51,14 @@ action:
           - service: switch.toggle
             target: !input switch_target
 
-      # 3. OBRÓT KOŁEM (brightness_move_to_level)
+            # 3. OBRÓT KOŁEM (Naprawiona jasność)
       - conditions:
           - condition: template
-            value_template: "{{ action == 'brightness_move_to_level' }}"
+            value_template: "{{ trigger.to_state.state == 'brightness_move_to_level' }}"
         sequence:
           - service: light.turn_on
             target: !input light_target
             data:
-              brightness: "{{ level | int }}"
+              # Wyciągamy jasność z atrybutów sensora, który wywołał wyzwalacz
+              brightness: "{{ state_attr(trigger.entity_id, 'action_level') | int(0) }}"
+
