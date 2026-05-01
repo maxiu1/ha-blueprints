@@ -1,0 +1,64 @@
+blueprint:
+  name: "Brilsa Wheel - Uniwersalny (Salon/Sypialnia)"
+  description: "Obsługuje on/off oraz jasność. Switch jest opcjonalny."
+  domain: automation
+  input:
+    remote_entity:
+      name: Brilsa Action Sensor
+      selector:
+        entity:
+          domain: sensor
+    light_target:
+      name: Światło (Pojedyncze kliknięcie i obrót)
+      selector:
+        target:
+          entity:
+            domain: light
+    switch_target:
+      name: Dodatkowy Switch (Podwójne kliknięcie - OPCJONALNIE)
+      default: []
+      selector:
+        target:
+          entity:
+            domain: switch
+
+mode: restart
+
+trigger:
+  - platform: state
+    entity_id: !input remote_entity
+
+action:
+  - variables:
+      current_action: "{{ trigger.to_state.state }}"
+      current_level: "{{ state_attr(trigger.entity_id, 'action_level') }}"
+      # Sprawdzamy czy switch_target został zdefiniowany
+      switch_exists: !input switch_target
+
+  - choose:
+      # 1. POJEDYNCZE KLIKNIĘCIE -> Zawsze przełącza światło
+      - conditions:
+          - condition: template
+            value_template: "{{ current_action in ['on', 'off', 'toggle'] }}"
+        sequence:
+          - service: light.toggle
+            target: !input light_target
+
+      # 2. PODWÓJNE KLIKNIĘCIE -> Tylko jeśli wybrałeś switcha w menu
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ current_action in ['on_double', 'off_double'] and switch_exists != [] }}
+        sequence:
+          - service: switch.toggle
+            target: !input switch_target
+
+      # 3. OBRÓT KOŁEM -> Jasność (zawsze gdy action_level jest liczbą)
+      - conditions:
+          - condition: template
+            value_template: "{{ current_level is not none and current_level | is_number }}"
+        sequence:
+          - service: light.turn_on
+            target: !input light_target
+            data:
+              brightness: "{{ current_level | int }}"
