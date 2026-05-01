@@ -1,78 +1,66 @@
 blueprint:
-  name: "Briluh Wheel1 - Sterowanie Salon i Krzak"
-  description: "Automatyzacja dla pilota Wheel1: Klik (Toggle), Double Klik (Krzak), Spin (Jasność)"
+  name: "Brilsa Wheel - Naprawa Sterowania"
+  description: "Dedykowany dla Brilsa/AVATTO. Klik: Salon, Double: Krzak, Spin: Brightness"
   domain: automation
   input:
-    wheel_event_entity:
-      name: Wheel Action Event
-      description: "Wybierz encję event dla Twojego koła (np. event.wheel1_action)"
+    remote_sensor:
+      name: Brilsa Action Sensor
+      description: "Wybierz sensor action (np. sensor.wheel1_action)"
       selector:
         entity:
-          domain: event
-    wheel_level_sensor:
-      name: Wheel Level Sensor
+          domain: sensor
+    level_sensor:
+      name: Brilsa Level Sensor
       description: "Wybierz sensor action_level (np. sensor.wheel1_action_level)"
       selector:
         entity:
           domain: sensor
-    light_target:
+    light_salon:
       name: Światło Salon
-      description: "Światło sterowane pojedynczym kliknięciem i obrotem"
       selector:
         target:
           entity:
             domain: light
-    krzak_target:
+    switch_krzak:
       name: Switch Krzak
-      description: "Przełącznik sterowany podwójnym kliknięciem"
       selector:
         target:
           entity:
             domain: switch
 
 mode: restart
-max_exceeded: silent
 
 trigger:
-  # Trigger dla kliknięć
+  # Reagujemy na każdą zmianę, nawet na tę samą wartość
   - platform: state
-    entity_id: !input wheel_event_entity
-    id: "click_event"
-  # Trigger dla kręcenia
+    entity_id: !input remote_sensor
   - platform: state
-    entity_id: !input wheel_level_sensor
-    id: "spin_event"
+    entity_id: !input level_sensor
 
 action:
   - choose:
-      # POJEDYNCZE KLIKNIĘCIE
+      # POJEDYNCZE KLIKNIĘCIE (Brilsa często wysyła 'toggle' zamiast 'single')
       - conditions:
-          - condition: trigger
-            id: "click_event"
           - condition: template
-            value_template: "{{ state_attr(trigger.entity_id, 'event_type') == 'single' }}"
+            value_template: "{{ states(remote_sensor) in ['single', 'toggle'] }}"
         sequence:
           - service: light.toggle
-            target: !input light_target
+            target: !input light_salon
 
       # PODWÓJNE KLIKNIĘCIE
       - conditions:
-          - condition: trigger
-            id: "click_event"
           - condition: template
-            value_template: "{{ state_attr(trigger.entity_id, 'event_type') == 'double' }}"
+            value_template: "{{ states(remote_sensor) == 'double' }}"
         sequence:
           - service: switch.toggle
-            target: !input krzak_target
+            target: !input switch_krzak
 
-      # KRĘCENIE KOŁEM (Brightness 0-255)
+      # OBRÓT (Jasność 0-255)
       - conditions:
-          - condition: trigger
-            id: "spin_event"
           - condition: template
-            value_template: "{{ trigger.to_state.state not in ['unknown', 'unavailable', 'null'] }}"
+            value_template: "{{ trigger.entity_id == level_sensor and trigger.to_state.state not in ['unknown', 'unavailable', 'null'] }}"
         sequence:
           - service: light.turn_on
-            target: !input light_target
+            target: !input light_salon
             data:
               brightness: "{{ trigger.to_state.state | int }}"
