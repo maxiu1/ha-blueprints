@@ -1,0 +1,78 @@
+blueprint:
+  name: "Briluh Wheel1 - Sterowanie Salon i Krzak"
+  description: "Automatyzacja dla pilota Wheel1: Klik (Toggle), Double Klik (Krzak), Spin (Jasność)"
+  domain: automation
+  input:
+    wheel_event_entity:
+      name: Wheel Action Event
+      description: "Wybierz encję event dla Twojego koła (np. event.wheel1_action)"
+      selector:
+        entity:
+          domain: event
+    wheel_level_sensor:
+      name: Wheel Level Sensor
+      description: "Wybierz sensor action_level (np. sensor.wheel1_action_level)"
+      selector:
+        entity:
+          domain: sensor
+    light_target:
+      name: Światło Salon
+      description: "Światło sterowane pojedynczym kliknięciem i obrotem"
+      selector:
+        target:
+          entity:
+            domain: light
+    krzak_target:
+      name: Switch Krzak
+      description: "Przełącznik sterowany podwójnym kliknięciem"
+      selector:
+        target:
+          entity:
+            domain: switch
+
+mode: restart
+max_exceeded: silent
+
+trigger:
+  # Trigger dla kliknięć
+  - platform: state
+    entity_id: !input wheel_event_entity
+    id: "click_event"
+  # Trigger dla kręcenia
+  - platform: state
+    entity_id: !input wheel_level_sensor
+    id: "spin_event"
+
+action:
+  - choose:
+      # POJEDYNCZE KLIKNIĘCIE
+      - conditions:
+          - condition: trigger
+            id: "click_event"
+          - condition: template
+            value_template: "{{ state_attr(trigger.entity_id, 'event_type') == 'single' }}"
+        sequence:
+          - service: light.toggle
+            target: !input light_target
+
+      # PODWÓJNE KLIKNIĘCIE
+      - conditions:
+          - condition: trigger
+            id: "click_event"
+          - condition: template
+            value_template: "{{ state_attr(trigger.entity_id, 'event_type') == 'double' }}"
+        sequence:
+          - service: switch.toggle
+            target: !input krzak_target
+
+      # KRĘCENIE KOŁEM (Brightness 0-255)
+      - conditions:
+          - condition: trigger
+            id: "spin_event"
+          - condition: template
+            value_template: "{{ trigger.to_state.state not in ['unknown', 'unavailable', 'null'] }}"
+        sequence:
+          - service: light.turn_on
+            target: !input light_target
+            data:
+              brightness: "{{ trigger.to_state.state | int }}"
