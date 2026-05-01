@@ -1,0 +1,69 @@
+blueprint:
+  name: "Brilsa Wheel - FINAL FIX"
+  description: "Działa na on/off (klik), on_double (double) oraz bezpośrednie zmiany action_level (spin)"
+  domain: automation
+  input:
+    remote_entity:
+      name: Brilsa Action Sensor
+      selector:
+        entity:
+          domain: sensor
+    light_target:
+      name: Światła Salon
+      selector:
+        target:
+          entity:
+            domain: light
+    switch_target:
+      name: Krzak
+      selector:
+        target:
+          entity:
+            domain: switch
+
+mode: restart
+
+trigger:
+  # Trigger 1: Kliknięcia (zmiana stanu tekstowego)
+  - platform: state
+    entity_id: !input remote_entity
+    id: "action_trigger"
+  # Trigger 2: Obrót (zmiana atrybutu action_level)
+  - platform: state
+    entity_id: !input remote_entity
+    attribute: action_level
+    id: "level_trigger"
+
+action:
+  - choose:
+      # 1. KLIKNIĘCIE (on / off / toggle)
+      - conditions:
+          - condition: trigger
+            id: "action_trigger"
+          - condition: template
+            value_template: "{{ trigger.to_state.state in ['on', 'off', 'toggle'] }}"
+        sequence:
+          - service: light.toggle
+            target: !input light_target
+
+      # 2. PODWÓJNE KLIKNIĘCIE (on_double / off_double)
+      - conditions:
+          - condition: trigger
+            id: "action_trigger"
+          - condition: template
+            value_template: "{{ trigger.to_state.state in ['on_double', 'off_double'] }}"
+        sequence:
+          - service: switch.toggle
+            target: !input switch_target
+
+      # 3. OBRÓT KOŁEM (Reaguje na zmianę atrybutu action_level)
+      - conditions:
+          - condition: trigger
+            id: "level_trigger"
+          - condition: template
+            value_template: "{{ state_attr(trigger.entity_id, 'action_level') not in ['none', 'null', unknown] }}"
+        sequence:
+          - service: light.turn_on
+            target: !input light_target
+            data:
+              brightness: "{{ state_attr(trigger.entity_id, 'action_level') | int }}"
