@@ -1,39 +1,37 @@
 blueprint:
-  name: IKEA Symfonisk Wheel (ZHA) - Manual IEEE
-  description: Control lights using the Wheel's IEEE address (found in Device Info).
+  name: IKEA Symfonisk Wheel (ZHA) - With Double Click
+  description: Adds double-click logic to the IKEA Gen 1 Wheel.
   domain: automation
   input:
     remote_ieee:
       name: Wheel IEEE Address
-      description: "Paste the Zigbee IEEE address here (e.g., 10:35:97:00:00:12:e4:2c)."
+      description: "Paste the IEEE address (e.g., 10:35:97:00:00:12:e4:2c)."
       selector:
         text:
     target_light:
-      name: Light to Toggle & Dim
-      description: The main light for clicking and scrolling.
+      name: Main Light (Single Click & Scroll)
       selector:
         target:
           entity:
             domain: light
     double_click_entity:
       name: Double Click Action
-      description: Entity to toggle when you click twice fast (On-On).
+      description: Entity to toggle when you click twice fast.
       default: []
       selector:
         target:
 
-mode: restart
+mode: restart # Important: Restart allows the timer to be 'interrupted' by the second click
 
 trigger:
   - platform: event
     event_type: zha_event
     event_data:
-      # We force the trigger to only care about your specific wheel's MAC
       device_ieee: !input remote_ieee
 
 action:
   - choose:
-      # SCROLLING
+      # SCROLLING (Dimming)
       - conditions:
           - "{{ trigger.event.data.command == 'move_to_level' }}"
         sequence:
@@ -42,16 +40,24 @@ action:
             data:
               brightness: "{{ trigger.event.data.args[0] }}"
 
-      # SINGLE CLICK
+      # BUTTON PRESS (The logic for Single vs Double)
       - conditions:
           - "{{ trigger.event.data.command == 'on' }}"
         sequence:
-          - service: light.toggle
-            target: !input target_light
-
-      # DOUBLE CLICK
-      - conditions:
-          - "{{ trigger.event.data.command == 'on_on' or trigger.event.data.command == 'step' }}"
-        sequence:
-          - service: homeassistant.toggle
-            target: !input double_click_entity
+          - wait_for_trigger:
+              - platform: event
+                event_type: zha_event
+                event_data:
+                  device_ieee: !input remote_ieee
+                  command: "on"
+            timeout: "00:00:00.400" # Window for the second click
+            continue_on_timeout: true
+          
+          - if:
+              - "{{ wait.trigger == none }}" # No second click happened
+            then:
+              - service: light.toggle
+                target: !input target_light
+            else: # Second click WAS detected
+              - service: homeassistant.toggle
+                target: !input double_click_entity
