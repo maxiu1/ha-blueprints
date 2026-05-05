@@ -1,0 +1,61 @@
+blueprint:
+  name: IKEA Symfonisk Wheel (ZHA) - Toggle, Dim & Double
+  description: Control lights with the IKEA sound controller via ZHA.
+  domain: automation
+  input:
+    remote_device:
+      name: Wheel Device
+      description: Select the IKEA Wheel device (for IEEE lookup).
+      selector:
+        device:
+          integration: zha
+          manufacturer: IKEA of Sweden
+          model: SYMFONISK sound controller
+    target_light:
+      name: Light to Toggle & Dim
+      description: The main light that will toggle on click and dim on scroll.
+      selector:
+        target:
+          entity:
+            domain: light
+    double_click_entity:
+      name: Double Click Action
+      description: Entity to toggle/run when you double-click (On-On).
+      default: []
+      selector:
+        target:
+
+mode: restart
+
+trigger:
+  - platform: event
+    event_type: zha_event
+
+action:
+  # Verify the event is from our selected device
+  - condition: template
+    value_template: "{{ trigger.event.data.device_id == device_id(remote_device) }}"
+  
+  - choose:
+      # SCROLL TO DIM
+      - conditions:
+          - "{{ trigger.event.data.command == 'move_to_level' }}"
+        sequence:
+          - service: light.turn_on
+            target: !input target_light
+            data:
+              brightness: "{{ trigger.event.data.args[0] }}"
+
+      # SINGLE CLICK (Toggle main light)
+      - conditions:
+          - "{{ trigger.event.data.command == 'on' }}"
+        sequence:
+          - service: light.toggle
+            target: !input target_light
+
+      # DOUBLE CLICK (On-On logic)
+      - conditions:
+          - "{{ trigger.event.data.command == 'on_on' or trigger.event.data.command == 'step' }}"
+        sequence:
+          - service: homeassistant.toggle
+            target: !input double_click_entity
